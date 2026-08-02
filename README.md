@@ -2,13 +2,13 @@
 
 Aplicação de demonstração de **notificações em tempo real** utilizando **Server-Sent Events (SSE)**, **Node.js**, **Express**, **Redis Pub/Sub**, **Nginx** e **Docker Compose**.
 
-O projeto foi desenvolvido de forma incremental para demonstrar desde uma implementação simples de SSE até conceitos de arquitetura distribuída, comunicação assíncrona, gerenciamento de conexões e containerização.
+O projeto foi desenvolvido de forma incremental para demonstrar desde uma implementação simples de SSE até conceitos de arquitetura distribuída, comunicação assíncrona, gerenciamento de conexões, containerização e preparação para escalabilidade.
 
 ---
 
-## 📌 Sobre o projeto
+# 📌 Sobre o projeto
 
-O objetivo principal deste projeto é entender como implementar comunicação em tempo real entre servidor e navegador utilizando **Server-Sent Events (SSE)**.
+O objetivo principal deste projeto é compreender como implementar comunicação em tempo real entre servidor e navegador utilizando **Server-Sent Events (SSE)**.
 
 Diferentemente de uma API HTTP tradicional, onde o cliente faz uma requisição e recebe uma resposta, com SSE o navegador mantém uma conexão HTTP aberta com o servidor.
 
@@ -52,12 +52,13 @@ Frontend
 * CSS
 * JavaScript
 * CORS
+* Nodemon
 
 ---
 
 # 🏗️ Arquitetura atual
 
-A aplicação atualmente possui três serviços:
+A aplicação possui três serviços principais:
 
 ```text
 ┌─────────────────────────────────────────────────────┐
@@ -90,7 +91,7 @@ A aplicação atualmente possui três serviços:
 └─────────────────────────────────────────────────────┘
 ```
 
-O frontend, backend e Redis são executados dentro do Docker.
+O frontend, backend e Redis podem ser executados dentro do Docker.
 
 O navegador acessa o frontend através de:
 
@@ -110,11 +111,7 @@ O Redis utiliza:
 localhost:6379
 ```
 
-para acesso externo, enquanto internamente o backend utiliza:
-
-```text
-redis://redis:6379
-```
+para acesso externo.
 
 ---
 
@@ -129,6 +126,7 @@ realtime-notification-service/
 │   │   ├── publisher.js
 │   │   └── subscriber.js
 │   │
+│   ├── Dockerfile.dev
 │   └── server.js
 │
 ├── frontend/
@@ -139,6 +137,7 @@ realtime-notification-service/
 ├── .gitignore
 ├── Dockerfile
 ├── docker-compose.yml
+├── docker-compose.dev.yml
 ├── package.json
 ├── package-lock.json
 └── README.md
@@ -188,6 +187,7 @@ Quando o servidor envia um evento:
 
 ```text
 data: {"message":"Olá"}
+
 ```
 
 o navegador recebe:
@@ -197,6 +197,8 @@ eventSource.onmessage = (event) => {
     console.log(event.data);
 };
 ```
+
+> Atualmente o projeto utiliza `onmessage`. Uma evolução planejada será utilizar eventos SSE nomeados com `addEventListener()`.
 
 ---
 
@@ -459,7 +461,7 @@ O projeto utiliza o padrão **Singleton** para os clientes Redis.
 
 A ideia é evitar que cada chamada crie uma nova conexão com Redis.
 
-Em vez disso, existe uma única instância compartilhada do Publisher e uma única instância compartilhada do Subscriber.
+Em vez disso, existe uma instância compartilhada do Publisher e uma instância compartilhada do Subscriber.
 
 Conceitualmente:
 
@@ -487,292 +489,266 @@ Isso evita a criação desnecessária de conexões Redis.
 
 # 🐳 Docker
 
-A aplicação utiliza Docker Compose para executar todos os componentes.
+O projeto utiliza Docker Compose para executar os componentes da aplicação.
 
-Atualmente temos:
+Existem duas configurações de Compose:
+
+```text
+docker-compose.yml
+```
+
+e:
+
+```text
+docker-compose.dev.yml
+```
+
+Elas possuem objetivos diferentes.
+
+---
+
+# 🛠️ Ambiente de desenvolvimento
+
+O ambiente de desenvolvimento utiliza:
+
+```text
+docker-compose.dev.yml
+```
+
+A arquitetura é:
 
 ```text
 Docker Compose
 │
-├── frontend
+├── Frontend
 │   └── Nginx
 │
-├── backend
-│   └── Node.js + Express
+├── Backend
+│   ├── Node.js
+│   └── Nodemon
 │
-└── redis
-    └── Redis 7
+└── Redis
 ```
 
----
-
-# 🌐 Frontend com Nginx
-
-O frontend é composto por HTML, CSS e JavaScript estáticos.
-
-Não é necessário utilizar Node.js para servi-lo.
-
-Por isso utilizamos o Nginx:
-
-```text
-Browser
-    │
-    │ localhost:5500
-    ▼
-Nginx Container
-    │
-    ▼
-index.html
-```
-
-O Dockerfile do frontend utiliza:
-
-```dockerfile
-FROM nginx:alpine
-```
-
-e copia:
-
-```text
-frontend/index.html
-```
-
-para:
-
-```text
-/usr/share/nginx/html/index.html
-```
-
----
-
-# ⚠️ Por que o Frontend usa localhost:3000?
-
-Mesmo estando dentro do Docker, o frontend utiliza:
-
-```javascript
-http://localhost:3000
-```
-
-para acessar o backend.
-
-Isso acontece porque o JavaScript do frontend é executado pelo **navegador**, e não pelo Nginx.
-
-O Nginx apenas entrega o HTML.
-
-O fluxo é:
-
-```text
-Browser
-   │
-   │ GET localhost:5500
-   ▼
-Nginx Container
-   │
-   │ entrega index.html
-   ▼
-Browser
-   │
-   │ JavaScript executa
-   │
-   │ localhost:3000
-   ▼
-Docker Host
-   │
-   ▼
-Backend Container
-```
-
----
-
-# ⚠️ Por que o Backend usa redis:6379?
-
-O backend está dentro de um container.
-
-Dentro de um container:
-
-```text
-localhost
-```
-
-representa o próprio container.
-
-Portanto:
-
-```text
-redis://localhost:6379
-```
-
-não acessaria o container Redis.
-
-O Docker Compose cria uma rede interna e permite que os serviços sejam encontrados pelo nome.
-
-Como o serviço se chama:
+O backend utiliza volumes:
 
 ```yaml
-redis:
+volumes:
+  - ./backend:/app/backend
+  - /app/node_modules
 ```
 
-o backend pode utilizar:
+Isso permite que o código da máquina seja refletido dentro do container.
+
+O fluxo fica:
 
 ```text
-redis://redis:6379
-```
-
-O fluxo interno é:
-
-```text
-Backend Container
+Alterar server.js
        │
-       │ redis:6379
        ▼
-Redis Container
+Arquivo local
+       │
+       │ Docker Volume
+       ▼
+Arquivo dentro do container
+       │
+       ▼
+Nodemon detecta alteração
+       │
+       ▼
+Node reinicia
 ```
+
+Dessa forma, não é necessário reconstruir o container a cada alteração no backend.
 
 ---
 
-# 🔧 Variáveis de ambiente
+# 🔥 Hot Reload no Windows
 
-O backend utiliza variáveis de ambiente para configurar o ambiente de execução.
+Como o projeto pode ser executado utilizando Windows + Docker Desktop + WSL2, o Nodemon utiliza polling para detectar alterações de arquivos.
 
-Exemplo:
+No `docker-compose.dev.yml`:
 
-```text
-REDIS_URL
-```
-
-No ambiente local:
-
-```text
-redis://localhost:6379
-```
-
-Dentro do Docker:
-
-```text
-redis://redis:6379
-```
-
-O código utiliza:
-
-```javascript
-process.env.REDIS_URL
-```
-
-com um valor padrão para execução local.
-
-Isso permite que o mesmo código funcione em diferentes ambientes.
-
----
-
-# 📦 Docker Compose
-
-O Docker Compose controla três serviços:
-
-```text
-frontend
-backend
-redis
-```
-
-O frontend utiliza:
-
-```text
-5500 → 80
+```yaml
+environment:
+  CHOKIDAR_USEPOLLING: "true"
 ```
 
 O backend utiliza:
 
-```text
-3000 → 3000
+```dockerfile
+CMD ["npx", "nodemon", "backend/server.js"]
 ```
 
-O Redis utiliza:
-
-```text
-6379 → 6379
-```
-
-A comunicação interna entre os containers utiliza a rede Docker criada automaticamente pelo Compose.
+Assim o Nodemon é executado dentro do container.
 
 ---
 
-# ▶️ Como executar o projeto
+# 🚀 Ambiente de execução
 
-## Pré-requisitos
-
-Você precisa ter:
-
-* Docker Desktop
-* Git
-
-O Node.js não é necessário para executar a aplicação através do Docker.
-
----
-
-# 🐳 Executando com Docker
-
-Clone o projeto:
-
-```bash
-git clone <repository-url>
-```
-
-Entre na pasta:
-
-```bash
-cd realtime-notification-service
-```
-
-Construa as imagens:
-
-```bash
-docker compose build
-```
-
-Inicie os serviços:
-
-```bash
-docker compose up -d
-```
-
-Verifique os containers:
-
-```bash
-docker compose ps
-```
-
-Você deverá encontrar:
+O:
 
 ```text
-NAME          STATUS
-sse-frontend  Up
-sse-backend   Up
-sse-redis     Up
+docker-compose.yml
+```
+
+representa o ambiente de execução sem as ferramentas específicas de desenvolvimento.
+
+Ele não utiliza Nodemon nem o volume de código utilizado no ambiente de desenvolvimento.
+
+O fluxo é:
+
+```text
+Código
+   ↓
+Docker Image
+   ↓
+Container
+   ↓
+Node.js
+```
+
+Alterações no código não aparecem automaticamente no container.
+
+Para atualizar a aplicação é necessário reconstruir a imagem:
+
+```bash
+docker compose up --build -d
 ```
 
 ---
 
-# 📋 Visualizando logs
+# ⚠️ Desenvolvimento não é produção real
 
-Frontend:
-
-```bash
-docker compose logs -f frontend
-```
-
-Backend:
+O comando:
 
 ```bash
-docker compose logs -f backend
+npm run prod
 ```
 
-Redis:
+é chamado de `prod` porque representa o modo de execução **sem hot reload e sem ferramentas de desenvolvimento**.
+
+Isso não significa que a aplicação esteja pronta para um ambiente de produção real.
+
+Ainda existem melhorias necessárias, como:
+
+* HTTPS/TLS
+* Secrets
+* Health Checks
+* Graceful Shutdown
+* Logs estruturados
+* Observabilidade
+* Métricas
+* Limites de recursos
+* Segurança
+* Load Balancer
+* Escalabilidade horizontal
+* Alta disponibilidade
+* Configuração adequada do Redis
+
+Esses pontos fazem parte da evolução planejada do projeto.
+
+---
+
+# 📦 Scripts do package.json
+
+O projeto possui scripts para facilitar a execução.
+
+## Desenvolvimento
+
+Iniciar:
 
 ```bash
-docker compose logs -f redis
+npm run dev
 ```
 
-Todos os serviços:
+Esse comando executa:
+
+```text
+Docker Compose
+    ↓
+docker-compose.dev.yml
+    ↓
+Frontend + Backend + Redis
+    ↓
+Backend com Nodemon
+```
+
+---
+
+## Parar desenvolvimento
+
+```bash
+npm run dev:down
+```
+
+Equivale a:
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
+---
+
+## Logs do desenvolvimento
+
+```bash
+npm run dev:logs
+```
+
+Equivale a:
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f
+```
+
+---
+
+## Ambiente de execução
+
+```bash
+npm run prod
+```
+
+Equivale a:
+
+```bash
+docker compose up --build -d
+```
+
+A opção:
+
+```text
+-d
+```
+
+significa **detached mode**.
+
+Os containers ficam executando em segundo plano.
+
+---
+
+## Parar ambiente de execução
+
+```bash
+npm run prod:down
+```
+
+Equivale a:
+
+```bash
+docker compose down
+```
+
+---
+
+## Logs do ambiente de execução
+
+```bash
+npm run prod:logs
+```
+
+Equivale a:
 
 ```bash
 docker compose logs -f
@@ -780,21 +756,155 @@ docker compose logs -f
 
 ---
 
-# 🛑 Parando a aplicação
+## Node diretamente na máquina
 
-Para parar os containers:
+Também existe:
+
+```bash
+npm start
+```
+
+que executa:
+
+```bash
+node backend/server.js
+```
+
+Esse comando **não utiliza Docker**.
+
+Para funcionar dessa maneira, o Redis precisa estar disponível de acordo com a configuração utilizada pelo backend.
+
+Esse modo é útil principalmente para testes rápidos ou quando você deseja executar apenas o Node diretamente na máquina.
+
+---
+
+# 🐳 Comandos Docker sem npm scripts
+
+Todos os scripts são apenas atalhos.
+
+Você pode executar os comandos Docker diretamente no terminal.
+
+---
+
+## Desenvolvimento
+
+Subir:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+Subir em background:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build -d
+```
+
+Parar:
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
+Ver containers:
+
+```bash
+docker compose -f docker-compose.dev.yml ps
+```
+
+Ver logs:
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f
+```
+
+Ver logs apenas do backend:
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f backend
+```
+
+Ver logs apenas do Redis:
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f redis
+```
+
+Ver logs apenas do frontend:
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f frontend
+```
+
+---
+
+# 🏭 Ambiente de execução
+
+Construir e iniciar:
+
+```bash
+docker compose up --build -d
+```
+
+Parar:
 
 ```bash
 docker compose down
 ```
 
-Para reconstruir após alterações:
+Ver containers:
+
+```bash
+docker compose ps
+```
+
+Ver logs:
+
+```bash
+docker compose logs -f
+```
+
+Ver logs do backend:
+
+```bash
+docker compose logs -f backend
+```
+
+---
+
+# 🧹 Recriar containers
+
+Caso seja necessário recriar os containers:
 
 ```bash
 docker compose down
-docker compose build
-docker compose up -d
+docker compose up --build -d
 ```
+
+No desenvolvimento:
+
+```bash
+docker compose -f docker-compose.dev.yml down
+docker compose -f docker-compose.dev.yml up --build -d
+```
+
+---
+
+# 🗑️ Remover containers e volumes
+
+Para remover containers e volumes criados pelo Compose:
+
+```bash
+docker compose down -v
+```
+
+No desenvolvimento:
+
+```bash
+docker compose -f docker-compose.dev.yml down -v
+```
+
+> ⚠️ Cuidado: remover volumes pode apagar dados persistidos associados aos serviços.
 
 ---
 
@@ -838,16 +948,6 @@ Exemplo:
 
 ```text
 http://localhost:3000/health
-```
-
-Retorna:
-
-```json
-{
-    "status": "ok",
-    "clients": 1,
-    "channel": "notifications"
-}
 ```
 
 ---
@@ -925,8 +1025,9 @@ todos os clientes conectados deverão recebê-la.
 * Middleware
 * CORS
 * Server-Sent Events
-* conexões persistentes
-* tratamento de erros
+* Conexões persistentes
+* Tratamento de erros
+* Nodemon
 
 ## Redis
 
@@ -934,16 +1035,18 @@ todos os clientes conectados deverão recebê-la.
 * Pub/Sub
 * Publisher
 * Subscriber
-* canais
-* comunicação assíncrona
+* Canais
+* Comunicação assíncrona
+* Reutilização de conexões
 
 ## Arquitetura
 
 * Singleton
-* separação de responsabilidades
-* gerenciamento de conexões
-* broadcast de eventos
-* comunicação entre processos
+* Separação de responsabilidades
+* Gerenciamento de conexões
+* Broadcast de eventos
+* Comunicação entre processos
+* Arquitetura orientada a eventos
 
 ## Docker
 
@@ -956,13 +1059,16 @@ todos os clientes conectados deverão recebê-la.
 * Environment Variables
 * Port Mapping
 * Container Networking
+* Bind Mount
+* Hot Reload
+* Ambientes de desenvolvimento e execução
 
 ## Frontend
 
 * EventSource
 * SSE
-* reconexão automática
-* comunicação com APIs
+* Reconexão automática
+* Comunicação com APIs
 * CORS
 
 ---
@@ -1033,28 +1139,89 @@ Docker Compose
 
 ---
 
+## Etapa 5 — Ambiente de desenvolvimento
+
+Separação entre desenvolvimento e execução:
+
+```text
+docker-compose.dev.yml
+│
+├── Nginx
+├── Node.js + Nodemon
+└── Redis
+```
+
+O backend utiliza:
+
+```text
+Volume
+   ↓
+Hot Reload
+   ↓
+Nodemon
+```
+
+Enquanto o ambiente de execução utiliza uma imagem sem Nodemon:
+
+```text
+Docker Image
+   ↓
+Node.js
+   ↓
+Application
+```
+
+---
+
 # 🚧 Próximas evoluções
 
-O projeto continuará evoluindo para conceitos mais avançados:
+As próximas etapas planejadas incluem:
+
+### SSE
+
+* Eventos nomeados
+* `addEventListener()`
+* Heartbeat
+* IDs de eventos
+* `Last-Event-ID`
+* Reconexão
+* Controle de retry
+* Graceful Shutdown
+
+### Backend
 
 * Health Checks
 * Graceful Shutdown
-* Heartbeat do SSE
-* `Last-Event-ID`
-* IDs de eventos SSE
-* múltiplas instâncias do backend
-* escalabilidade horizontal
-* Load Balancer
-* Redis compartilhado entre instâncias
-* arquitetura distribuída
-* gerenciamento de conexões SSE em múltiplas instâncias
+* Tratamento avançado do ciclo de vida
+* Logs estruturados
+* Configuração por ambiente
+* Validação de dados
+* Testes automatizados
+
+### Redis
+
+* Gerenciamento avançado das conexões
 * Redis Streams
-* filas
-* observabilidade
-* logs estruturados
-* métricas
-* testes automatizados
-* testes de carga
+* Filas
+* Persistência
+* Estratégias de recuperação
+
+### Escalabilidade
+
+* Múltiplas instâncias do Node.js
+* Load Balancer
+* Redis compartilhado
+* Broadcast distribuído
+* Gerenciamento de conexões SSE em múltiplas instâncias
+* Arquitetura distribuída
+
+### Observabilidade
+
+* Logs
+* Métricas
+* Monitoramento
+* Health Checks
+* Tracing
 
 ---
 
@@ -1062,7 +1229,7 @@ O projeto continuará evoluindo para conceitos mais avançados:
 
 O objetivo não é apenas fazer notificações aparecerem no navegador.
 
-O projeto busca compreender **por que cada componente existe e como eles se relacionam**.
+O projeto busca compreender **por que cada componente existe, como eles se relacionam e como a arquitetura precisa evoluir quando a aplicação cresce**.
 
 A evolução arquitetural pode ser resumida em:
 
@@ -1089,11 +1256,18 @@ Docker
  └── networking
  │
  ▼
-Containerização completa
+Docker Development Environment
  │
- ├── Frontend
- ├── Backend
- └── Redis
+ ├── Volumes
+ ├── Nodemon
+ └── Hot Reload
+ │
+ ▼
+Eventos SSE Nomeados
+ │
+ ├── Event Types
+ ├── addEventListener
+ └── separação de responsabilidades
  │
  ▼
 Escalabilidade
