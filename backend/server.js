@@ -24,12 +24,9 @@ const CHANNEL =
  * Origens permitidas para o frontend.
  *
  * Durante o desenvolvimento podemos acessar
- * o Live Server tanto através de:
+ * o frontend através de:
  *
  * http://localhost:5500
- *
- * quanto:
- *
  * http://127.0.0.1:5500
  */
 const ALLOWED_ORIGINS = [
@@ -54,17 +51,16 @@ app.use(express.json());
  *
  * Origin: http://localhost:5500
  *
- * O callback verifica se essa origem
- * está na lista de origens permitidas.
+ * O callback verifica se a origem está
+ * na lista de origens permitidas.
  */
 app.use(
     cors({
         origin: (origin, callback) => {
-
             /**
              * Algumas requisições podem não possuir
-             * Origin, por exemplo chamadas feitas
-             * diretamente pelo curl.
+             * Origin, como chamadas feitas diretamente
+             * através do curl.
              */
             if (!origin) {
                 return callback(null, true);
@@ -75,11 +71,13 @@ app.use(
             }
 
             console.warn(
-                `[CORS] Origem bloqueada: ${origin}`
+                `[CORS] Origem bloqueada: ${origin} `
             );
 
             return callback(
-                new Error("Origem não permitida pelo CORS.")
+                new Error(
+                    "Origem não permitida pelo CORS."
+                )
             );
         },
     })
@@ -93,8 +91,18 @@ app.use(
  * Armazena todas as conexões SSE atualmente
  * abertas.
  *
- * Cada navegador conectado adiciona uma
- * resposta HTTP neste Set.
+ * Cada navegador conectado possui uma resposta
+ * HTTP mantida aberta pelo servidor.
+ *
+ * Exemplo:
+ *
+ * Cliente A ──┐
+ * Cliente B ──┼──> clients
+ * Cliente C ──┘
+ *
+ * Quando uma mensagem chega pelo Redis,
+ * percorremos esse Set e enviamos a mensagem
+ * para todos os clientes.
  */
 const clients = new Set();
 
@@ -106,62 +114,110 @@ app.get("/events", (req, res) => {
 
     console.log("[SSE] Novo cliente conectado.");
 
-    // Informa ao navegador que esta resposta
-    // será um fluxo Server-Sent Events.
+    // ========================================
+    // HEADERS SSE
+    // ========================================
+
+    /**
+     * Informa ao navegador que essa resposta
+     * será um fluxo Server-Sent Events.
+     */
     res.setHeader(
         "Content-Type",
         "text/event-stream"
     );
 
-    // Impede cache da conexão.
+    /**
+     * Impede que intermediários armazenem
+     * a resposta em cache.
+     */
     res.setHeader(
         "Cache-Control",
         "no-cache"
     );
 
-    // Mantém a conexão HTTP aberta.
+    /**
+     * Mantém a conexão HTTP aberta.
+     */
     res.setHeader(
         "Connection",
         "keep-alive"
     );
 
-    // Envia os headers imediatamente.
+    /**
+     * Envia os headers imediatamente.
+     */
     res.flushHeaders();
 
-    // Guarda a conexão ativa.
+    // ========================================
+    // REGISTRA CLIENTE
+    // ========================================
+
+    /**
+     * Guarda a conexão no Set.
+     *
+     * A partir deste momento o cliente poderá
+     * receber eventos publicados no Redis.
+     */
     clients.add(res);
 
     console.log(
-        `[SSE] Clientes conectados: ${clients.size}`
+        `[SSE] Clientes conectados: ${clients.size} `
     );
 
+    // ========================================
+    // EVENTO: CONNECTION
+    // ========================================
+
     /**
-     * Evento inicial.
+     * Envia um evento SSE nomeado informando
+     * ao frontend que a conexão foi estabelecida.
      *
-     * Serve para confirmar que a conexão
-     * SSE foi estabelecida corretamente.
+     * Formato:
+     *
+     * event: connection
+     * data: {...}
+     *
+     * No frontend:
+     *
+     * eventSource.addEventListener(
+     *     "connection",
+     *     ...
+     * );
      */
+    res.write("event: connection\n");
     res.write(
         `data: ${JSON.stringify({
             type: "connection",
             message: "Conectado ao servidor SSE",
-        })}\n\n`
+        })
+        } \n\n`
     );
 
+    // ========================================
+    // ENCERRAMENTO DA CONEXÃO
+    // ========================================
+
     /**
-     * Quando o navegador fechar a conexão,
-     * removemos o cliente do Set.
+     * O evento "close" é disparado quando
+     * o cliente encerra a conexão HTTP.
+     *
+     * Isso pode acontecer quando:
+     *
+     * - o usuário fecha a página;
+     * - o navegador navega para outra página;
+     * - EventSource.close() é chamado;
+     * - a conexão é interrompida.
      */
     req.on("close", () => {
+        clients.delete(res);
 
         console.log(
             "[SSE] Cliente desconectado."
         );
 
-        clients.delete(res);
-
         console.log(
-            `[SSE] Clientes conectados: ${clients.size}`
+            `[SSE] Clientes conectados: ${clients.size} `
         );
     });
 });
@@ -176,27 +232,44 @@ app.post("/notify", async (req, res) => {
 
         const { message } = req.body;
 
-        if (!message) {
+        // ========================================
+        // VALIDAÇÃO
+        // ========================================
 
+        if (
+            typeof message !== "string" ||
+            !message.trim()
+        ) {
             return res.status(400).json({
                 error: "A mensagem é obrigatória.",
             });
         }
 
+        // ========================================
+        // PAYLOAD
+        // ========================================
+
         const notification = {
             type: "notification",
-            message,
+            message: message.trim(),
             timestamp: new Date().toISOString(),
         };
 
-        /**
-         * Obtém o Publisher Singleton.
-         */
-        const publisher =
-            await getPublisher();
+        // ========================================
+        // REDIS PUBLISHER
+        // ========================================
 
         /**
-         * Publica a mensagem no Redis.
+         * Obtém o Publisher Singleton.
+         *
+         * A aplicação reutiliza a mesma conexão
+         * Redis em vez de criar uma nova conexão
+         * a cada requisição HTTP.
+         */
+        const publisher = await getPublisher();
+
+        /**
+         * Publica a notificação no canal Redis.
          */
         await publisher.publish(
             CHANNEL,
@@ -246,48 +319,86 @@ app.get("/health", (req, res) => {
 async function startServer() {
 
     try {
+        // ========================================
+        // REDIS SUBSCRIBER
+        // ========================================
 
         /**
-         * O Subscriber precisa ser iniciado
-         * quando o servidor sobe.
+         * O Subscriber precisa estar conectado
+         * antes de começar a receber mensagens.
+         *
+         * O Singleton garante que teremos uma
+         * única conexão Subscriber reutilizável
+         * durante o ciclo de vida da aplicação.
          */
-        const subscriber =
-            await getSubscriber();
+        const subscriber = await getSubscriber();
+
+        // ========================================
+        // REDIS SUBSCRIBE
+        // ========================================
 
         /**
-         * Escuta o canal de notificações.
+         * Inscreve o Subscriber no canal Redis.
+         *
+         * Sempre que o Publisher publicar uma
+         * mensagem nesse canal, este callback
+         * será executado.
          */
         await subscriber.subscribe(
             CHANNEL,
             (message) => {
-
                 console.log(
                     "[Redis Subscriber] Mensagem recebida:",
                     message
                 );
 
+                // ========================================
+                // REDIS → SSE
+                // ========================================
+
                 /**
-                 * Redis entregou a mensagem.
+                 * A mensagem chegou do Redis.
                  *
-                 * Agora enviamos a mensagem para
-                 * todos os navegadores conectados
-                 * através do SSE.
+                 * Agora ela precisa ser enviada
+                 * para todos os navegadores conectados.
                  */
                 for (const client of clients) {
 
                     try {
-
+                        /**
+                         * Define o tipo do evento SSE.
+                         *
+                         * O frontend poderá escutar:
+                         *
+                         * eventSource.addEventListener(
+                         *     "notification",
+                         *     ...
+                         * );
+                         */
                         client.write(
-                            `data: ${message}\n\n`
+                            "event: notification\n"
                         );
 
+                        /**
+                         * Envia o payload da mensagem.
+                         *
+                         * O JSON foi originalmente criado
+                         * pelo endpoint POST /notify.
+                         */
+                        client.write(
+                            `data: ${message} \n\n`
+                        );
                     } catch (error) {
-
                         console.error(
                             "[SSE] Erro ao enviar mensagem:",
                             error
                         );
 
+                        /**
+                         * Se não for possível escrever
+                         * na conexão, removemos o cliente
+                         * da lista de conexões ativas.
+                         */
                         clients.delete(client);
                     }
                 }
@@ -295,7 +406,7 @@ async function startServer() {
         );
 
         console.log(
-            `[Redis Subscriber] Inscrito no canal: ${CHANNEL}`
+            `[Redis Subscriber] Inscrito no canal: ${CHANNEL} `
         );
 
         // ========================================
@@ -303,31 +414,35 @@ async function startServer() {
         // ========================================
 
         app.listen(PORT, () => {
-
             console.log("");
+
             console.log(
                 "===================================="
             );
+
             console.log(
-                `API:      http://localhost:${PORT}`
+                `API: http://localhost:${PORT}`
             );
+
             console.log(
                 `SSE:      http://localhost:${PORT}/events`
             );
+
             console.log(
                 `Health:   http://localhost:${PORT}/health`
             );
+
             console.log(
                 "Frontend: localhost:5500 / 127.0.0.1:5500"
             );
+
             console.log(
                 "===================================="
             );
+
             console.log("");
         });
-
     } catch (error) {
-
         console.error(
             "[Server] Falha ao iniciar aplicação:",
             error
@@ -341,15 +456,27 @@ async function startServer() {
 // SHUTDOWN
 // ========================================
 
+/**
+ * Executado quando o processo recebe um
+ * sinal de encerramento.
+ *
+ * O objetivo é realizar um graceful shutdown:
+ *
+ * 1. Fechar conexões SSE.
+ * 2. Limpar o Set de clientes.
+ * 3. Encerrar Publisher Redis.
+ * 4. Encerrar Subscriber Redis.
+ * 5. Encerrar o processo.
+ */
 async function shutdown(signal) {
-
     console.log(
         `\n[Server] Recebido ${signal}. Encerrando...`
     );
 
-    /**
-     * Fecha todas as conexões SSE.
-     */
+    // ========================================
+    // FECHA SSE
+    // ========================================
+
     for (const client of clients) {
 
         try {
@@ -367,16 +494,19 @@ async function shutdown(signal) {
 
     clients.clear();
 
-    /**
-     * Fecha o Publisher.
-     */
+    // ========================================
+    // FECHA PUBLISHER
+    // ========================================
+
     try {
+        const publisher = await getPublisher();
 
-        const publisher =
-            await getPublisher();
-
-        if (publisher?.isOpen) {
+        if (publisher && publisher.isOpen) {
             await publisher.quit();
+
+            console.log(
+                "[Redis Publisher] Conexão encerrada."
+            );
         }
 
     } catch (error) {
@@ -387,16 +517,19 @@ async function shutdown(signal) {
         );
     }
 
-    /**
-     * Fecha o Subscriber.
-     */
+    // ========================================
+    // FECHA SUBSCRIBER
+    // ========================================
+
     try {
+        const subscriber = await getSubscriber();
 
-        const subscriber =
-            await getSubscriber();
-
-        if (subscriber?.isOpen) {
+        if (subscriber && subscriber.isOpen) {
             await subscriber.quit();
+
+            console.log(
+                "[Redis Subscriber] Conexão encerrada."
+            );
         }
 
     } catch (error) {
@@ -407,8 +540,16 @@ async function shutdown(signal) {
         );
     }
 
+    console.log(
+        "[Server] Aplicação encerrada."
+    );
+
     process.exit(0);
 }
+
+// ========================================
+// PROCESS SIGNALS
+// ========================================
 
 process.on(
     "SIGINT",

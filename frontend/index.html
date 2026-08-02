@@ -206,10 +206,10 @@
         // MENSAGEM RECEBIDA
         // ========================================
 
-        eventSource.onmessage = (event) => {
+        eventSource.addEventListener("notification", (event) => {
 
             console.log(
-                "[SSE] Evento recebido:",
+                "[SSE notification] Evento recebido :",
                 event.data
             );
 
@@ -282,7 +282,7 @@
                     error
                 );
             }
-        };
+        });
 
 
         // ========================================
