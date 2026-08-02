@@ -1,8 +1,8 @@
 # Realtime Notification Service
 
-Aplicação de demonstração de **notificações em tempo real** utilizando **Server-Sent Events (SSE)**, **Node.js**, **Express**, **Redis Pub/Sub** e **Docker**.
+Aplicação de demonstração de **notificações em tempo real** utilizando **Server-Sent Events (SSE)**, **Node.js**, **Express**, **Redis Pub/Sub**, **Nginx** e **Docker Compose**.
 
-O projeto foi desenvolvido de forma incremental para demonstrar desde uma implementação simples de SSE até uma arquitetura mais próxima de uma aplicação real, utilizando Redis como mecanismo de comunicação entre processos.
+O projeto foi desenvolvido de forma incremental para demonstrar desde uma implementação simples de SSE até conceitos de arquitetura distribuída, comunicação assíncrona, gerenciamento de conexões e containerização.
 
 ---
 
@@ -19,8 +19,7 @@ Neste projeto, o fluxo completo é:
 ```text
 Frontend
     │
-    │ EventSource
-    │ GET /events
+    │ HTTP + SSE
     ▼
 Node.js + Express
     │
@@ -46,6 +45,7 @@ Frontend
 * Server-Sent Events (SSE)
 * Redis
 * Redis Pub/Sub
+* Nginx
 * Docker
 * Docker Compose
 * HTML
@@ -57,41 +57,64 @@ Frontend
 
 # 🏗️ Arquitetura atual
 
-Atualmente, o projeto possui três componentes principais:
+A aplicação atualmente possui três serviços:
 
 ```text
-┌──────────────────────────────┐
-│          Frontend            │
-│                              │
-│      HTML + JavaScript       │
-│                              │
-│      localhost:5500          │
-└──────────────┬───────────────┘
-               │
-               │ HTTP + SSE
-               ▼
-┌──────────────────────────────┐
-│       Node.js + Express      │
-│                              │
-│       Docker Container       │
-│                              │
-│       localhost:3000         │
-└──────────────┬───────────────┘
-               │
-               │ Redis Pub/Sub
-               ▼
-┌──────────────────────────────┐
-│            Redis             │
-│                              │
-│       Docker Container       │
-│                              │
-│       localhost:6379         │
-└──────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                    Docker Compose                   │
+│                                                     │
+│  ┌─────────────────┐                                │
+│  │     Frontend    │                                │
+│  │                 │                                │
+│  │      Nginx      │                                │
+│  │       :80       │                                │
+│  └────────┬────────┘                                │
+│           │                                         │
+│           │ HTTP                                    │
+│           │                                         │
+│  ┌────────▼────────┐                                │
+│  │     Backend     │                                │
+│  │                 │                                │
+│  │ Node.js Express │                                │
+│  │      :3000      │                                │
+│  └────────┬────────┘                                │
+│           │                                         │
+│           │ Redis Pub/Sub                           │
+│           │                                         │
+│  ┌────────▼────────┐                                │
+│  │      Redis      │                                │
+│  │                 │                                │
+│  │      :6379      │                                │
+│  └─────────────────┘                                │
+│                                                     │
+└─────────────────────────────────────────────────────┘
 ```
 
-O frontend permanece independente do Express.
+O frontend, backend e Redis são executados dentro do Docker.
 
-O backend e o Redis são gerenciados pelo Docker Compose.
+O navegador acessa o frontend através de:
+
+```text
+http://localhost:5500
+```
+
+O backend é disponibilizado através de:
+
+```text
+http://localhost:3000
+```
+
+O Redis utiliza:
+
+```text
+localhost:6379
+```
+
+para acesso externo, enquanto internamente o backend utiliza:
+
+```text
+redis://redis:6379
+```
 
 ---
 
@@ -109,6 +132,7 @@ realtime-notification-service/
 │   └── server.js
 │
 ├── frontend/
+│   ├── Dockerfile
 │   └── index.html
 │
 ├── .dockerignore
@@ -122,7 +146,7 @@ realtime-notification-service/
 
 ---
 
-# 🔌 Server-Sent Events
+# 📡 Server-Sent Events
 
 ## O que é SSE?
 
@@ -166,7 +190,7 @@ Quando o servidor envia um evento:
 data: {"message":"Olá"}
 ```
 
-o navegador executa:
+o navegador recebe:
 
 ```javascript
 eventSource.onmessage = (event) => {
@@ -212,8 +236,6 @@ Servidor
    ├── evento
    └── evento
 ```
-
-A conexão permanece aberta.
 
 ---
 
@@ -459,22 +481,24 @@ Request C → Redis Connection C
 Request D → Redis Connection D
 ```
 
-Isso é importante principalmente quando a aplicação recebe muitas requisições simultâneas.
+Isso evita a criação desnecessária de conexões Redis.
 
 ---
 
 # 🐳 Docker
 
-A aplicação utiliza Docker para executar o backend e o Redis.
+A aplicação utiliza Docker Compose para executar todos os componentes.
 
-A arquitetura atual é:
+Atualmente temos:
 
 ```text
 Docker Compose
 │
+├── frontend
+│   └── Nginx
+│
 ├── backend
-│   ├── Node.js
-│   └── Express
+│   └── Node.js + Express
 │
 └── redis
     └── Redis 7
@@ -482,122 +506,133 @@ Docker Compose
 
 ---
 
-# 🐳 Dockerfile
+# 🌐 Frontend com Nginx
 
-O `Dockerfile` define como a imagem do backend será construída.
+O frontend é composto por HTML, CSS e JavaScript estáticos.
 
-A imagem base utilizada é:
+Não é necessário utilizar Node.js para servi-lo.
+
+Por isso utilizamos o Nginx:
+
+```text
+Browser
+    │
+    │ localhost:5500
+    ▼
+Nginx Container
+    │
+    ▼
+index.html
+```
+
+O Dockerfile do frontend utiliza:
 
 ```dockerfile
-FROM node:24-alpine
+FROM nginx:alpine
 ```
 
-Depois o projeto é copiado para:
+e copia:
 
 ```text
-/app
+frontend/index.html
 ```
 
-As dependências são instaladas com:
+para:
 
-```bash
-npm ci
-```
-
-E a aplicação é iniciada com:
-
-```bash
-node backend/server.js
+```text
+/usr/share/nginx/html/index.html
 ```
 
 ---
 
-# 🌐 Docker Networking
+# ⚠️ Por que o Frontend usa localhost:3000?
 
-Um dos conceitos mais importantes desta etapa é a comunicação entre containers.
+Mesmo estando dentro do Docker, o frontend utiliza:
 
-O backend **não utiliza**:
-
-```text
-redis://localhost:6379
+```javascript
+http://localhost:3000
 ```
 
-quando está rodando dentro do Docker.
+para acessar o backend.
 
-Ele utiliza:
+Isso acontece porque o JavaScript do frontend é executado pelo **navegador**, e não pelo Nginx.
 
-```text
-redis://redis:6379
-```
+O Nginx apenas entrega o HTML.
 
-Isso acontece porque `redis` é o nome do serviço definido no `docker-compose.yml`.
-
-Exemplo:
-
-```yaml
-services:
-
-  backend:
-    ...
-
-  redis:
-    image: redis:7-alpine
-```
-
-O Docker cria uma rede interna e permite que o backend encontre o Redis através do hostname:
+O fluxo é:
 
 ```text
-redis
+Browser
+   │
+   │ GET localhost:5500
+   ▼
+Nginx Container
+   │
+   │ entrega index.html
+   ▼
+Browser
+   │
+   │ JavaScript executa
+   │
+   │ localhost:3000
+   ▼
+Docker Host
+   │
+   ▼
+Backend Container
 ```
 
 ---
 
-# ⚠️ localhost dentro do Docker
+# ⚠️ Por que o Backend usa redis:6379?
 
-É importante entender que:
+O backend está dentro de um container.
+
+Dentro de um container:
 
 ```text
 localhost
 ```
 
-dentro de um container significa:
-
-> O próprio container.
+representa o próprio container.
 
 Portanto:
 
 ```text
-backend container
-localhost:6379
+redis://localhost:6379
 ```
 
-significa:
+não acessaria o container Redis.
 
-```text
-backend container → backend container
+O Docker Compose cria uma rede interna e permite que os serviços sejam encontrados pelo nome.
+
+Como o serviço se chama:
+
+```yaml
+redis:
 ```
 
-Não significa:
+o backend pode utilizar:
 
 ```text
-backend container → Redis container
+redis://redis:6379
 ```
 
-Para acessar o Redis:
+O fluxo interno é:
 
 ```text
-backend container
+Backend Container
        │
        │ redis:6379
        ▼
-Redis container
+Redis Container
 ```
 
 ---
 
 # 🔧 Variáveis de ambiente
 
-O backend utiliza variáveis de ambiente para permitir que a mesma aplicação funcione em diferentes ambientes.
+O backend utiliza variáveis de ambiente para configurar o ambiente de execução.
 
 Exemplo:
 
@@ -605,7 +640,7 @@ Exemplo:
 REDIS_URL
 ```
 
-Localmente:
+No ambiente local:
 
 ```text
 redis://localhost:6379
@@ -623,33 +658,38 @@ O código utiliza:
 process.env.REDIS_URL
 ```
 
-e possui um valor padrão para desenvolvimento local.
+com um valor padrão para execução local.
 
-Isso evita colocar configurações específicas do ambiente diretamente no código.
+Isso permite que o mesmo código funcione em diferentes ambientes.
 
 ---
 
 # 📦 Docker Compose
 
-O Docker Compose controla os serviços da aplicação.
-
-Atualmente temos:
+O Docker Compose controla três serviços:
 
 ```text
+frontend
 backend
 redis
 ```
 
-O backend expõe:
+O frontend utiliza:
 
 ```text
-3000
+5500 → 80
 ```
 
-O Redis expõe:
+O backend utiliza:
 
 ```text
-6379
+3000 → 3000
+```
+
+O Redis utiliza:
+
+```text
+6379 → 6379
 ```
 
 A comunicação interna entre os containers utiliza a rede Docker criada automaticamente pelo Compose.
@@ -665,13 +705,13 @@ Você precisa ter:
 * Docker Desktop
 * Git
 
-O Node.js é necessário apenas se quiser executar a aplicação diretamente fora do Docker.
+O Node.js não é necessário para executar a aplicação através do Docker.
 
 ---
 
 # 🐳 Executando com Docker
 
-Primeiro clone o projeto:
+Clone o projeto:
 
 ```bash
 git clone <repository-url>
@@ -683,7 +723,7 @@ Entre na pasta:
 cd realtime-notification-service
 ```
 
-Construa a imagem:
+Construa as imagens:
 
 ```bash
 docker compose build
@@ -701,10 +741,11 @@ Verifique os containers:
 docker compose ps
 ```
 
-Você deverá encontrar algo semelhante a:
+Você deverá encontrar:
 
 ```text
 NAME          STATUS
+sse-frontend  Up
 sse-backend   Up
 sse-redis     Up
 ```
@@ -713,19 +754,25 @@ sse-redis     Up
 
 # 📋 Visualizando logs
 
-Para acompanhar os logs do backend:
+Frontend:
+
+```bash
+docker compose logs -f frontend
+```
+
+Backend:
 
 ```bash
 docker compose logs -f backend
 ```
 
-Para acompanhar os logs do Redis:
+Redis:
 
 ```bash
 docker compose logs -f redis
 ```
 
-Para visualizar todos:
+Todos os serviços:
 
 ```bash
 docker compose logs -f
@@ -741,7 +788,7 @@ Para parar os containers:
 docker compose down
 ```
 
-Para reconstruir a aplicação após alterações:
+Para reconstruir após alterações:
 
 ```bash
 docker compose down
@@ -751,25 +798,31 @@ docker compose up -d
 
 ---
 
-# 🌐 Executando o Frontend
+# 🌐 URLs
 
-Atualmente o frontend permanece independente do backend.
-
-Ele pode ser executado utilizando o **Live Server** do VS Code ou outro servidor HTTP estático.
-
-O frontend deve estar disponível em:
+Frontend:
 
 ```text
 http://localhost:5500
 ```
 
-ou:
+Backend:
 
 ```text
-http://127.0.0.1:5500
+http://localhost:3000
 ```
 
-O backend permite ambas as origens através do CORS.
+Health Check:
+
+```text
+http://localhost:3000/health
+```
+
+SSE:
+
+```text
+http://localhost:3000/events
+```
 
 ---
 
@@ -787,7 +840,7 @@ Exemplo:
 http://localhost:3000/health
 ```
 
-Retorna informações sobre o estado da aplicação:
+Retorna:
 
 ```json
 {
@@ -835,7 +888,7 @@ O backend publica a mensagem no Redis e o Subscriber distribui para os clientes 
 
 # 🧪 Testando o SSE
 
-Abra o frontend em:
+Abra:
 
 ```text
 http://localhost:5500
@@ -863,9 +916,7 @@ todos os clientes conectados deverão recebê-la.
 
 # 🧠 Conceitos estudados
 
-Este projeto foi construído para estudar os seguintes conceitos:
-
-### Backend
+## Backend
 
 * Node.js
 * Express
@@ -877,7 +928,7 @@ Este projeto foi construído para estudar os seguintes conceitos:
 * conexões persistentes
 * tratamento de erros
 
-### Redis
+## Redis
 
 * Redis Client
 * Pub/Sub
@@ -886,7 +937,7 @@ Este projeto foi construído para estudar os seguintes conceitos:
 * canais
 * comunicação assíncrona
 
-### Arquitetura
+## Arquitetura
 
 * Singleton
 * separação de responsabilidades
@@ -894,7 +945,7 @@ Este projeto foi construído para estudar os seguintes conceitos:
 * broadcast de eventos
 * comunicação entre processos
 
-### Docker
+## Docker
 
 * Dockerfile
 * Docker Image
@@ -906,11 +957,17 @@ Este projeto foi construído para estudar os seguintes conceitos:
 * Port Mapping
 * Container Networking
 
+## Frontend
+
+* EventSource
+* SSE
+* reconexão automática
+* comunicação com APIs
+* CORS
+
 ---
 
-# 📈 Evolução planejada
-
-O projeto será evoluído progressivamente.
+# 📈 Evolução do projeto
 
 ## Etapa 1 — SSE básico
 
@@ -945,7 +1002,7 @@ SSE
 
 ---
 
-## Etapa 3 — Dockerização
+## Etapa 3 — Dockerização do Backend
 
 Backend e Redis executando dentro do Docker:
 
@@ -958,38 +1015,50 @@ Docker Compose
 
 ---
 
-## Próximas evoluções
+## Etapa 4 — Dockerização do Frontend
 
-As próximas etapas deverão explorar conceitos como:
+Toda a aplicação passa a ser gerenciada pelo Docker Compose:
 
-* frontend dentro do Docker
-* múltiplas instâncias do backend
-* Load Balancer
-* Redis compartilhado entre instâncias
-* escalabilidade horizontal
-* gerenciamento de conexões SSE
-* heartbeat
-* reconexão automática
-* `Last-Event-ID`
-* event IDs
-* graceful shutdown
-* health checks
-* Docker healthcheck
-* observabilidade
-* métricas
-* logs estruturados
-* Redis Streams
-* filas
-* arquitetura distribuída
-* testes automatizados
-* testes de carga
-* possíveis limitações do SSE em ambientes distribuídos
-
-O objetivo é transformar gradualmente este projeto de uma aplicação didática simples em uma arquitetura capaz de demonstrar conceitos utilizados em sistemas de produção.
+```text
+Docker Compose
+│
+├── Nginx
+│   └── Frontend
+│
+├── Node.js
+│   └── Express
+│
+└── Redis
+```
 
 ---
 
-# 📚 Objetivo de aprendizado
+# 🚧 Próximas evoluções
+
+O projeto continuará evoluindo para conceitos mais avançados:
+
+* Health Checks
+* Graceful Shutdown
+* Heartbeat do SSE
+* `Last-Event-ID`
+* IDs de eventos SSE
+* múltiplas instâncias do backend
+* escalabilidade horizontal
+* Load Balancer
+* Redis compartilhado entre instâncias
+* arquitetura distribuída
+* gerenciamento de conexões SSE em múltiplas instâncias
+* Redis Streams
+* filas
+* observabilidade
+* logs estruturados
+* métricas
+* testes automatizados
+* testes de carga
+
+---
+
+# 🎯 Objetivo de aprendizado
 
 O objetivo não é apenas fazer notificações aparecerem no navegador.
 
@@ -1018,6 +1087,13 @@ Docker
  ├── isolamento
  ├── reprodução do ambiente
  └── networking
+ │
+ ▼
+Containerização completa
+ │
+ ├── Frontend
+ ├── Backend
+ └── Redis
  │
  ▼
 Escalabilidade
