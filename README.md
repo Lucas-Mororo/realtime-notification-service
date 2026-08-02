@@ -1,865 +1,259 @@
-# SSE + Express + Redis Pub/Sub
+# Realtime Notification Service
 
-Projeto didático demonstrando como implementar **Server-Sent Events (SSE)** utilizando:
+Aplicação de demonstração de **notificações em tempo real** utilizando **Server-Sent Events (SSE)**, **Node.js**, **Express**, **Redis Pub/Sub** e **Docker**.
+
+O projeto foi desenvolvido de forma incremental para demonstrar desde uma implementação simples de SSE até uma arquitetura mais próxima de uma aplicação real, utilizando Redis como mecanismo de comunicação entre processos.
+
+---
+
+## 📌 Sobre o projeto
+
+O objetivo principal deste projeto é entender como implementar comunicação em tempo real entre servidor e navegador utilizando **Server-Sent Events (SSE)**.
+
+Diferentemente de uma API HTTP tradicional, onde o cliente faz uma requisição e recebe uma resposta, com SSE o navegador mantém uma conexão HTTP aberta com o servidor.
+
+O servidor pode então enviar novos eventos para o navegador sempre que alguma informação estiver disponível.
+
+Neste projeto, o fluxo completo é:
+
+```text
+Frontend
+    │
+    │ EventSource
+    │ GET /events
+    ▼
+Node.js + Express
+    │
+    │ Redis Pub/Sub
+    ▼
+Redis
+    │
+    │ Notification
+    ▼
+Node.js + Express
+    │
+    │ SSE
+    ▼
+Frontend
+```
+
+---
+
+# 🚀 Tecnologias utilizadas
 
 * Node.js
 * Express
-* Server-Sent Events
+* Server-Sent Events (SSE)
 * Redis
 * Redis Pub/Sub
-* Singleton
-* HTML + JavaScript puro
-
-O objetivo é entender como manter uma conexão HTTP aberta entre navegador e servidor para que o backend possa enviar notificações em tempo real, utilizando o Redis como mecanismo de distribuição de eventos.
+* Docker
+* Docker Compose
+* HTML
+* CSS
+* JavaScript
+* CORS
 
 ---
 
-# 1. O que este projeto faz?
+# 🏗️ Arquitetura atual
 
-A aplicação permite que vários navegadores mantenham uma conexão aberta com o servidor utilizando **Server-Sent Events**.
-
-Quando uma notificação é criada:
+Atualmente, o projeto possui três componentes principais:
 
 ```text
-Cliente
-   │
-   │ POST /notify
-   ▼
-Express
-   │
-   │ PUBLISH
-   ▼
-Redis
-   │
-   │ SUBSCRIBE
-   ▼
-Express
-   │
-   │ SSE
-   ├──────────────► Browser 1
-   ├──────────────► Browser 2
-   └──────────────► Browser 3
+┌──────────────────────────────┐
+│          Frontend            │
+│                              │
+│      HTML + JavaScript       │
+│                              │
+│      localhost:5500          │
+└──────────────┬───────────────┘
+               │
+               │ HTTP + SSE
+               ▼
+┌──────────────────────────────┐
+│       Node.js + Express      │
+│                              │
+│       Docker Container       │
+│                              │
+│       localhost:3000         │
+└──────────────┬───────────────┘
+               │
+               │ Redis Pub/Sub
+               ▼
+┌──────────────────────────────┐
+│            Redis             │
+│                              │
+│       Docker Container       │
+│                              │
+│       localhost:6379         │
+└──────────────────────────────┘
 ```
 
-Assim, uma única notificação pode ser enviada para todos os clientes conectados.
+O frontend permanece independente do Express.
+
+O backend e o Redis são gerenciados pelo Docker Compose.
 
 ---
 
-# 2. O que é Server-Sent Events?
-
-**Server-Sent Events**, ou SSE, é uma tecnologia que permite que o servidor envie dados para o navegador continuamente através de uma conexão HTTP que permanece aberta.
-
-Normalmente, uma requisição HTTP funciona assim:
+# 📂 Estrutura do projeto
 
 ```text
-Browser
-   │
-   │ GET /users
-   ▼
-Server
-   │
-   │ response
-   ▼
-Browser
-
-Conexão encerrada
-```
-
-Com SSE:
-
-```text
-Browser
-   │
-   │ GET /events
-   ▼
-Server
-   │
-   │ conexão permanece aberta
-   │
-   ├──── evento
-   ├──── evento
-   ├──── evento
-   ├──── evento
-   └──── ...
-```
-
-O navegador fica esperando novas informações.
-
----
-
-# 3. SSE é WebSocket?
-
-Não.
-
-Apesar de ambos permitirem comunicação em tempo real, existem diferenças importantes.
-
-## SSE
-
-A comunicação é principalmente:
-
-```text
-SERVER
-   │
-   │
-   ▼
-CLIENT
-```
-
-Ou seja, o servidor envia eventos para o cliente.
-
-O navegador utiliza:
-
-```javascript
-const eventSource = new EventSource("/events");
-```
-
----
-
-## WebSocket
-
-O WebSocket permite comunicação bidirecional:
-
-```text
-CLIENT ◄──────────► SERVER
-```
-
-Tanto cliente quanto servidor podem enviar mensagens através da conexão.
-
----
-
-## Quando SSE pode ser interessante?
-
-SSE é uma ótima opção para situações como:
-
-* notificações;
-* atualização de status;
-* acompanhamento de processamento;
-* dashboards;
-* monitoramento;
-* feeds;
-* progresso de tarefas;
-* atualizações em tempo real.
-
-Se o cliente precisa enviar muitas mensagens para o servidor através da mesma conexão, WebSocket pode ser mais adequado.
-
----
-
-# 4. Tecnologias utilizadas
-
-## Node.js
-
-Runtime responsável pela execução do JavaScript no backend.
-
-## Express
-
-Framework HTTP utilizado para criar:
-
-* rotas;
-* middleware;
-* API;
-* endpoint SSE.
-
-## Redis
-
-Banco de dados em memória que também oferece recursos de:
-
-* cache;
-* Pub/Sub;
-* filas;
-* armazenamento temporário;
-* comunicação entre processos.
-
-Neste projeto utilizamos especificamente o **Redis Pub/Sub**.
-
-## HTML + JavaScript
-
-O frontend utiliza JavaScript puro para abrir a conexão SSE e receber os eventos.
-
----
-
-# 5. Estrutura do projeto
-
-```text
-sse-redis/
+realtime-notification-service/
 │
-├── package.json
-├── server.js
+├── backend/
+│   │
+│   ├── redis/
+│   │   ├── publisher.js
+│   │   └── subscriber.js
+│   │
+│   └── server.js
+│
+├── frontend/
+│   └── index.html
+│
+├── .dockerignore
+├── .gitignore
+├── Dockerfile
 ├── docker-compose.yml
-│
-├── redis/
-│   ├── publisher.js
-│   └── subscriber.js
-│
-└── public/
-    └── index.html
+├── package.json
+├── package-lock.json
+└── README.md
 ```
 
 ---
 
-# 6. Responsabilidade de cada arquivo
+# 🔌 Server-Sent Events
 
-## `server.js`
+## O que é SSE?
 
-É responsável pela aplicação HTTP.
+Server-Sent Events é uma tecnologia que permite que o servidor envie eventos para o navegador através de uma conexão HTTP persistente.
 
-Ele contém:
-
-* Express;
-* rotas;
-* endpoint SSE;
-* gerenciamento dos clientes conectados;
-* publicação de notificações;
-* inicialização do subscriber.
-
----
-
-## `redis/publisher.js`
-
-Responsável pelo Redis Publisher.
-
-Ele:
-
-1. cria o cliente Redis;
-2. conecta ao Redis;
-3. trata erros;
-4. mantém uma instância Singleton;
-5. disponibiliza essa instância para o restante da aplicação.
-
----
-
-## `redis/subscriber.js`
-
-Responsável pelo Redis Subscriber.
-
-Ele:
-
-1. cria o cliente Redis;
-2. conecta ao Redis;
-3. trata erros;
-4. mantém uma instância Singleton;
-5. disponibiliza essa instância para o restante da aplicação.
-
----
-
-## `public/index.html`
-
-Frontend da aplicação.
-
-Ele:
-
-1. abre a conexão SSE;
-2. recebe eventos;
-3. mostra notificações;
-4. envia `POST /notify`.
-
----
-
-## `docker-compose.yml`
-
-Responsável por executar o Redis através do Docker.
-
----
-
-# 7. Pré-requisitos
-
-Você precisa ter instalado:
-
-* Node.js;
-* npm;
-* Docker.
-
-Verifique:
-
-```bash
-node --version
-```
-
-```bash
-npm --version
-```
-
-```bash
-docker --version
-```
-
----
-
-# 8. Instalando o projeto
-
-Clone o projeto ou crie a estrutura manualmente.
-
-Depois entre na pasta:
-
-```bash
-cd sse-redis
-```
-
-Instale as dependências:
-
-```bash
-npm install
-```
-
----
-
-# 9. Subindo o Redis
-
-O projeto utiliza Docker para executar o Redis.
-
-Execute:
-
-```bash
-docker compose up -d
-```
-
-Verifique:
-
-```bash
-docker ps
-```
-
-Você deverá encontrar um container Redis em execução.
-
----
-
-# 10. Iniciando a aplicação
-
-Execute:
-
-```bash
-npm run dev
-```
-
-Ou:
-
-```bash
-npm start
-```
-
-Se tudo estiver funcionando, você verá algo parecido com:
-
-```text
-[Redis Subscriber] Conectado ao Redis.
-[Redis] Inscrito no canal: notifications
-
-====================================
-Servidor: http://localhost:3000
-SSE:      http://localhost:3000/events
-Health:  http://localhost:3000/health
-Canal:   notifications
-====================================
-```
-
-Abra:
-
-```text
-http://localhost:3000
-```
-
----
-
-# 11. Testando SSE
-
-Abra duas abas:
-
-```text
-Aba 1:
-http://localhost:3000
-
-Aba 2:
-http://localhost:3000
-```
-
-As duas páginas abrirão uma conexão com:
-
-```text
-/events
-```
-
-No backend teremos:
-
-```text
-Browser 1 ─────┐
-               │
-Browser 2 ─────┼────► Express
-               │
-Browser 3 ─────┘
-```
-
-Cada navegador possui sua própria conexão SSE.
-
----
-
-# 12. Enviando uma notificação
-
-Na interface, escreva:
-
-```text
-Novo pedido recebido!
-```
-
-Clique em:
-
-```text
-Enviar
-```
-
-O frontend fará:
-
-```http
-POST /notify
-```
-
-com:
-
-```json
-{
-  "message": "Novo pedido recebido!"
-}
-```
-
----
-
-# 13. O que acontece depois?
-
-O `server.js` recebe:
-
-```javascript
-app.post("/notify", async (req, res) => {
-```
-
-Extrai:
-
-```javascript
-const { message } = req.body;
-```
-
-Cria:
-
-```javascript
-const notification = {
-    type: "notification",
-    message: message.trim(),
-    timestamp: new Date().toISOString(),
-};
-```
-
-Depois obtém o Publisher:
-
-```javascript
-const publisher = await getPublisher();
-```
-
-E publica no Redis:
-
-```javascript
-await publisher.publish(
-    CHANNEL,
-    JSON.stringify(notification)
-);
-```
-
----
-
-# 14. O que significa PUBLISH?
-
-O Redis possui um sistema chamado **Pub/Sub**.
-
-Imagine:
-
-```text
-CHANNEL
-notifications
-```
-
-O Publisher publica:
-
-```text
-PUBLISH notifications "Nova mensagem"
-```
-
-O Redis recebe isso e procura quem está inscrito nesse canal.
-
----
-
-# 15. O Subscriber
-
-O nosso Subscriber executa:
-
-```javascript
-await subscriber.subscribe(
-    CHANNEL,
-    (message) => {
-        // ...
-    }
-);
-```
-
-Isso significa:
-
-> "Redis, quero receber todas as mensagens publicadas no canal `notifications`."
-
-Então temos:
-
-```text
-Publisher
-    │
-    │ PUBLISH
-    ▼
- Redis
-    │
-    │ mensagem
-    ▼
-Subscriber
-```
-
----
-
-# 16. O que o Subscriber faz com a mensagem?
-
-Quando recebe:
-
-```javascript
-(message) => {
-```
-
-ele percorre todos os clientes SSE:
-
-```javascript
-for (const client of clients) {
-```
-
-E envia:
-
-```javascript
-client.write(
-    `data: ${message}\n\n`
-);
-```
-
-Isso é o ponto onde Redis e SSE se encontram.
-
----
-
-# 17. Por que `data:`?
-
-SSE possui um formato próprio.
-
-Um evento simples é:
-
-```text
-data: Olá mundo!
-
-
-```
-
-Observe que existem **duas quebras de linha** no final.
-
-No código:
-
-```javascript
-res.write(
-    `data: ${message}\n\n`
-);
-```
-
-Temos:
-
-```text
-data: mensagem
-\n
-\n
-```
-
-O segundo `\n` indica o fim do evento.
-
----
-
-# 18. O frontend recebe o evento
-
-No navegador temos:
-
-```javascript
-const eventSource =
-    new EventSource("/events");
-```
-
-Isso cria uma conexão persistente com:
+O navegador cria uma conexão:
 
 ```text
 GET /events
 ```
 
-Depois:
+O servidor mantém essa conexão aberta.
+
+Enquanto ela estiver aberta, o servidor pode enviar novos eventos:
+
+```text
+data: {"message":"Nova notificação"}
+
+data: {"message":"Outra notificação"}
+```
+
+O navegador recebe esses eventos sem precisar realizar novas requisições HTTP.
+
+---
+
+# 🌐 EventSource
+
+No frontend utilizamos a API nativa do navegador:
+
+```javascript
+const eventSource = new EventSource(
+    "http://localhost:3000/events"
+);
+```
+
+O `EventSource` cria uma conexão HTTP persistente com o endpoint SSE.
+
+Quando o servidor envia um evento:
+
+```text
+data: {"message":"Olá"}
+```
+
+o navegador executa:
 
 ```javascript
 eventSource.onmessage = (event) => {
-```
-
-é executado sempre que o servidor enviar uma mensagem SSE.
-
-A mensagem chega em:
-
-```javascript
-event.data
-```
-
-Como enviamos JSON:
-
-```javascript
-const data =
-    JSON.parse(event.data);
-```
-
-Agora podemos utilizar:
-
-```javascript
-data.message
-```
-
-```javascript
-data.timestamp
-```
-
-```javascript
-data.type
+    console.log(event.data);
+};
 ```
 
 ---
 
-# 19. O fluxo completo
+# 🔄 SSE vs HTTP tradicional
 
-Este é o fluxo mais importante do projeto:
+Uma API tradicional normalmente funciona assim:
 
 ```text
-┌──────────────┐
-│   Browser    │
-└──────┬───────┘
-       │
-       │ POST /notify
-       ▼
-┌──────────────┐
-│   Express    │
-└──────┬───────┘
-       │
-       │ publisher.publish()
-       ▼
-┌──────────────┐
-│    Redis     │
-│   Pub/Sub    │
-└──────┬───────┘
-       │
-       │ subscriber
-       ▼
-┌──────────────┐
-│   Express    │
-└──────┬───────┘
-       │
-       │ res.write()
-       ▼
-┌──────────────┐
-│  SSE Client  │
-└──────────────┘
+Cliente
+   │
+   │ GET /notifications
+   ▼
+Servidor
+   │
+   │ Response
+   ▼
+Cliente
 ```
+
+Depois que a resposta é enviada, a requisição termina.
+
+Se o cliente quiser saber se apareceu uma nova notificação, precisa fazer outra requisição.
+
+Com SSE:
+
+```text
+Cliente
+   │
+   │ GET /events
+   ▼
+Servidor
+   │
+   │ conexão permanece aberta
+   │
+   ├── evento
+   ├── evento
+   ├── evento
+   └── evento
+```
+
+A conexão permanece aberta.
 
 ---
 
-# 20. Por que temos Publisher e Subscriber separados?
+# 📡 Endpoint SSE
 
-Um detalhe importante do Redis Pub/Sub é que uma conexão utilizada para `SUBSCRIBE` possui um comportamento diferente.
-
-Por isso utilizamos:
+O backend possui:
 
 ```text
-Redis
- │
- ├── Publisher
- │
- └── Subscriber
+GET /events
 ```
 
-O Publisher publica:
+Esse endpoint configura a resposta como:
+
+```http
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+```
+
+O servidor também utiliza:
 
 ```javascript
-publisher.publish(...)
+res.flushHeaders();
 ```
 
-O Subscriber escuta:
+para enviar os headers imediatamente.
 
-```javascript
-subscriber.subscribe(...)
-```
-
-Não tratamos os dois como a mesma responsabilidade.
+Depois disso, a conexão permanece aberta.
 
 ---
 
-# 21. Por que não criar um Redis para cada usuário?
+# 👥 Conexões SSE
 
-Imagine que tivéssemos:
-
-```javascript
-app.get("/events", async (req, res) => {
-
-    const redis =
-        createClient();
-
-    await redis.connect();
-
-});
-```
-
-Cada usuário que acessasse `/events` criaria uma nova conexão Redis.
-
-Se tivermos:
-
-```text
-100 usuários
-```
-
-poderíamos ter:
-
-```text
-100 conexões Redis
-```
-
-Com:
-
-```text
-10.000 usuários
-```
-
-teríamos um problema muito maior.
-
-Isso gera overhead desnecessário.
-
----
-
-# 22. Singleton
-
-Por isso utilizamos Singleton.
-
-No `publisher.js`:
-
-```javascript
-let publisher = null;
-```
-
-Na função:
-
-```javascript
-async function getPublisher() {
-
-    if (publisher) {
-        return publisher;
-    }
-
-    publisher = createClient(...);
-
-    await publisher.connect();
-
-    return publisher;
-}
-```
-
-Na primeira chamada:
-
-```text
-getPublisher()
-     │
-     ▼
-publisher existe?
-     │
-     └── NÃO
-          │
-          ▼
-     createClient()
-          │
-          ▼
-       connect()
-          │
-          ▼
-       retorna
-```
-
-Na segunda:
-
-```text
-getPublisher()
-     │
-     ▼
-publisher existe?
-     │
-     └── SIM
-          │
-          ▼
-    retorna existente
-```
-
-Assim:
-
-```text
-getPublisher()
-getPublisher()
-getPublisher()
-getPublisher()
-```
-
-utilizam a mesma instância.
-
----
-
-# 23. Singleton não significa uma conexão por usuário
-
-Esse é um conceito fundamental.
-
-Temos:
-
-```text
-1000 usuários
-      │
-      │
-      ▼
-1000 conexões SSE
-      │
-      ▼
-   Express
-      │
-      ├──── Publisher Singleton
-      │
-      └──── Subscriber Singleton
-                    │
-                    ▼
-                  Redis
-```
-
-Não temos:
-
-```text
-1000 usuários
-      │
-      ├── Redis #1
-      ├── Redis #2
-      ├── Redis #3
-      ├── ...
-      └── Redis #1000
-```
-
-Cada cliente precisa da sua própria conexão SSE.
-
-Mas os clientes não precisam de uma conexão Redis individual.
-
----
-
-# 24. Por que `clients` é um Set?
-
-Temos:
+O backend mantém as conexões abertas em memória através de um `Set`:
 
 ```javascript
 const clients = new Set();
 ```
 
-Quando um usuário conecta:
+Quando um navegador conecta:
 
 ```javascript
 clients.add(res);
@@ -871,592 +265,780 @@ Quando desconecta:
 clients.delete(res);
 ```
 
-Podemos imaginar:
+Assim conseguimos controlar todos os clientes conectados.
+
+Exemplo:
 
 ```text
 clients
 
-┌─────────────────┐
-│ Browser A       │
-├─────────────────┤
-│ Browser B       │
-├─────────────────┤
-│ Browser C       │
-└─────────────────┘
+┌─────────────────────────┐
+│ SSE Connection #1       │
+│ Browser A               │
+├─────────────────────────┤
+│ SSE Connection #2       │
+│ Browser B               │
+├─────────────────────────┤
+│ SSE Connection #3       │
+│ Browser C               │
+└─────────────────────────┘
 ```
 
-Quando Redis recebe uma notificação:
+Quando uma notificação chega:
 
 ```javascript
 for (const client of clients) {
-    client.write(...);
+    client.write(`data: ${message}\n\n`);
 }
 ```
 
-O servidor envia para todos.
+todos os clientes recebem a mensagem.
 
 ---
 
-# 25. Por que precisamos remover clientes desconectados?
+# 📨 Redis Pub/Sub
 
-Imagine:
+O Redis é utilizado como mecanismo de publicação e assinatura de mensagens.
+
+O projeto utiliza dois clientes Redis diferentes:
 
 ```text
-Browser A
-   │
-   │ conexão SSE
-   ▼
-Express
+Publisher
+    │
+    │ PUBLISH
+    ▼
+Redis Channel
+    │
+    │ SUBSCRIBE
+    ▼
+Subscriber
 ```
 
-O usuário fecha a aba.
+O canal utilizado é:
 
-Se não fizermos:
-
-```javascript
-clients.delete(res);
-```
-
-o servidor continuará mantendo uma referência para aquela conexão.
-
-Isso pode provocar:
-
-* consumo desnecessário de memória;
-* referências de conexões antigas;
-* erros ao tentar enviar eventos;
-* vazamento de recursos.
-
-Por isso temos:
-
-```javascript
-req.on("close", () => {
-
-    clients.delete(res);
-
-});
+```text
+notifications
 ```
 
 ---
 
-# 26. O que acontece se o navegador perder a conexão?
+# 📤 Publisher
 
-O frontend utiliza:
+O Publisher é responsável por publicar mensagens no Redis.
 
-```javascript
-const eventSource =
-    new EventSource("/events");
+Quando fazemos:
+
+```http
+POST /notify
 ```
 
-Uma característica importante do `EventSource` é que ele pode tentar reconectar automaticamente quando a conexão é perdida.
-
-Podemos monitorar:
+o backend cria uma notificação:
 
 ```javascript
-eventSource.onerror = (error) => {
-    console.error(error);
+const notification = {
+    type: "notification",
+    message,
+    timestamp: new Date().toISOString(),
 };
 ```
 
-E:
+Depois publica:
 
 ```javascript
-eventSource.onopen = () => {
-    console.log("Conectado!");
-};
+await publisher.publish(
+    "notifications",
+    JSON.stringify(notification)
+);
 ```
 
 ---
 
-# 27. Testando diretamente o SSE
+# 📥 Subscriber
 
-Abra:
-
-```text
-http://localhost:3000/events
-```
-
-Você deverá receber algo parecido com:
+O Subscriber fica escutando o canal:
 
 ```text
-data: {"type":"connection","message":"Conectado ao servidor SSE"}
+notifications
 ```
 
-A requisição não termina imediatamente.
+Quando o Redis recebe uma mensagem, o Subscriber recebe:
 
-Ela permanece aberta.
+```javascript
+subscriber.subscribe(
+    "notifications",
+    (message) => {
+        // mensagem recebida
+    }
+);
+```
 
-Esse é um dos pontos fundamentais do SSE.
+Depois o backend envia essa mensagem para os clientes SSE.
 
 ---
 
-# 28. Testando a API sem frontend
+# 🔁 Fluxo completo da notificação
 
-Você também pode testar o endpoint diretamente.
+Quando uma requisição chega:
 
-Com cURL:
-
-```bash
-curl -X POST http://localhost:3000/notify \
-  -H "Content-Type: application/json" \
-  -d "{\"message\":\"Olá SSE!\"}"
+```http
+POST /notify
 ```
 
-Resposta:
+com:
 
 ```json
 {
-  "success": true,
-  "message": "Notificação publicada."
+    "message": "Nova notificação!"
 }
 ```
 
-Se houver navegadores conectados ao SSE, eles receberão a mensagem.
+acontece:
+
+```text
+┌──────────────┐
+│   Frontend   │
+└──────┬───────┘
+       │
+       │ POST /notify
+       ▼
+┌──────────────────┐
+│ Node + Express   │
+└────────┬─────────┘
+         │
+         │ PUBLISH
+         ▼
+┌──────────────────┐
+│      Redis       │
+│                  │
+│ notifications    │
+└────────┬─────────┘
+         │
+         │ SUBSCRIBE
+         ▼
+┌──────────────────┐
+│ Redis Subscriber │
+└────────┬─────────┘
+         │
+         │ Broadcast
+         ▼
+┌──────────────────┐
+│    SSE Clients   │
+└────────┬─────────┘
+         │
+         ▼
+     Navegadores
+```
 
 ---
 
-# 29. Health Check
+# 🧩 Singleton
 
-A aplicação possui:
+O projeto utiliza o padrão **Singleton** para os clientes Redis.
+
+A ideia é evitar que cada chamada crie uma nova conexão com Redis.
+
+Em vez disso, existe uma única instância compartilhada do Publisher e uma única instância compartilhada do Subscriber.
+
+Conceitualmente:
+
+```text
+Aplicação
+    │
+    ├── Request A ──┐
+    ├── Request B ──┼──► Publisher Singleton
+    ├── Request C ──┤
+    └── Request D ──┘
+```
+
+Em vez de:
+
+```text
+Request A → Redis Connection A
+Request B → Redis Connection B
+Request C → Redis Connection C
+Request D → Redis Connection D
+```
+
+Isso é importante principalmente quando a aplicação recebe muitas requisições simultâneas.
+
+---
+
+# 🐳 Docker
+
+A aplicação utiliza Docker para executar o backend e o Redis.
+
+A arquitetura atual é:
+
+```text
+Docker Compose
+│
+├── backend
+│   ├── Node.js
+│   └── Express
+│
+└── redis
+    └── Redis 7
+```
+
+---
+
+# 🐳 Dockerfile
+
+O `Dockerfile` define como a imagem do backend será construída.
+
+A imagem base utilizada é:
+
+```dockerfile
+FROM node:24-alpine
+```
+
+Depois o projeto é copiado para:
+
+```text
+/app
+```
+
+As dependências são instaladas com:
+
+```bash
+npm ci
+```
+
+E a aplicação é iniciada com:
+
+```bash
+node backend/server.js
+```
+
+---
+
+# 🌐 Docker Networking
+
+Um dos conceitos mais importantes desta etapa é a comunicação entre containers.
+
+O backend **não utiliza**:
+
+```text
+redis://localhost:6379
+```
+
+quando está rodando dentro do Docker.
+
+Ele utiliza:
+
+```text
+redis://redis:6379
+```
+
+Isso acontece porque `redis` é o nome do serviço definido no `docker-compose.yml`.
+
+Exemplo:
+
+```yaml
+services:
+
+  backend:
+    ...
+
+  redis:
+    image: redis:7-alpine
+```
+
+O Docker cria uma rede interna e permite que o backend encontre o Redis através do hostname:
+
+```text
+redis
+```
+
+---
+
+# ⚠️ localhost dentro do Docker
+
+É importante entender que:
+
+```text
+localhost
+```
+
+dentro de um container significa:
+
+> O próprio container.
+
+Portanto:
+
+```text
+backend container
+localhost:6379
+```
+
+significa:
+
+```text
+backend container → backend container
+```
+
+Não significa:
+
+```text
+backend container → Redis container
+```
+
+Para acessar o Redis:
+
+```text
+backend container
+       │
+       │ redis:6379
+       ▼
+Redis container
+```
+
+---
+
+# 🔧 Variáveis de ambiente
+
+O backend utiliza variáveis de ambiente para permitir que a mesma aplicação funcione em diferentes ambientes.
+
+Exemplo:
+
+```text
+REDIS_URL
+```
+
+Localmente:
+
+```text
+redis://localhost:6379
+```
+
+Dentro do Docker:
+
+```text
+redis://redis:6379
+```
+
+O código utiliza:
+
+```javascript
+process.env.REDIS_URL
+```
+
+e possui um valor padrão para desenvolvimento local.
+
+Isso evita colocar configurações específicas do ambiente diretamente no código.
+
+---
+
+# 📦 Docker Compose
+
+O Docker Compose controla os serviços da aplicação.
+
+Atualmente temos:
+
+```text
+backend
+redis
+```
+
+O backend expõe:
+
+```text
+3000
+```
+
+O Redis expõe:
+
+```text
+6379
+```
+
+A comunicação interna entre os containers utiliza a rede Docker criada automaticamente pelo Compose.
+
+---
+
+# ▶️ Como executar o projeto
+
+## Pré-requisitos
+
+Você precisa ter:
+
+* Docker Desktop
+* Git
+
+O Node.js é necessário apenas se quiser executar a aplicação diretamente fora do Docker.
+
+---
+
+# 🐳 Executando com Docker
+
+Primeiro clone o projeto:
+
+```bash
+git clone <repository-url>
+```
+
+Entre na pasta:
+
+```bash
+cd realtime-notification-service
+```
+
+Construa a imagem:
+
+```bash
+docker compose build
+```
+
+Inicie os serviços:
+
+```bash
+docker compose up -d
+```
+
+Verifique os containers:
+
+```bash
+docker compose ps
+```
+
+Você deverá encontrar algo semelhante a:
+
+```text
+NAME          STATUS
+sse-backend   Up
+sse-redis     Up
+```
+
+---
+
+# 📋 Visualizando logs
+
+Para acompanhar os logs do backend:
+
+```bash
+docker compose logs -f backend
+```
+
+Para acompanhar os logs do Redis:
+
+```bash
+docker compose logs -f redis
+```
+
+Para visualizar todos:
+
+```bash
+docker compose logs -f
+```
+
+---
+
+# 🛑 Parando a aplicação
+
+Para parar os containers:
+
+```bash
+docker compose down
+```
+
+Para reconstruir a aplicação após alterações:
+
+```bash
+docker compose down
+docker compose build
+docker compose up -d
+```
+
+---
+
+# 🌐 Executando o Frontend
+
+Atualmente o frontend permanece independente do backend.
+
+Ele pode ser executado utilizando o **Live Server** do VS Code ou outro servidor HTTP estático.
+
+O frontend deve estar disponível em:
+
+```text
+http://localhost:5500
+```
+
+ou:
+
+```text
+http://127.0.0.1:5500
+```
+
+O backend permite ambas as origens através do CORS.
+
+---
+
+# 🔗 Endpoints
+
+## Health Check
 
 ```http
 GET /health
 ```
 
-Acesse:
+Exemplo:
 
 ```text
 http://localhost:3000/health
 ```
 
-Exemplo:
+Retorna informações sobre o estado da aplicação:
 
 ```json
 {
-  "status": "ok",
-  "sseClients": 2,
-  "timestamp": "2026-08-02T..."
+    "status": "ok",
+    "clients": 1,
+    "channel": "notifications"
 }
 ```
 
-Isso é útil para verificar se a aplicação está funcionando e quantos clientes SSE estão conectados.
+---
+
+## SSE
+
+```http
+GET /events
+```
+
+Exemplo:
+
+```text
+http://localhost:3000/events
+```
+
+Esse endpoint mantém uma conexão HTTP aberta com o cliente.
 
 ---
 
-# 30. Por que Redis é útil aqui?
+## Criar notificação
 
-Sem Redis, poderíamos fazer:
+```http
+POST /notify
+```
+
+Body:
+
+```json
+{
+    "message": "Nova notificação!"
+}
+```
+
+O backend publica a mensagem no Redis e o Subscriber distribui para os clientes SSE conectados.
+
+---
+
+# 🧪 Testando o SSE
+
+Abra o frontend em:
+
+```text
+http://localhost:5500
+```
+
+Abra duas ou mais abas do navegador.
+
+Cada aba cria uma conexão SSE independente:
+
+```text
+Browser 1 ──────┐
+Browser 2 ───────┼──► /events
+Browser 3 ──────┘
+```
+
+Quando uma notificação for enviada:
 
 ```text
 POST /notify
-     │
-     ▼
+```
+
+todos os clientes conectados deverão recebê-la.
+
+---
+
+# 🧠 Conceitos estudados
+
+Este projeto foi construído para estudar os seguintes conceitos:
+
+### Backend
+
+* Node.js
+* Express
+* HTTP
+* REST
+* Middleware
+* CORS
+* Server-Sent Events
+* conexões persistentes
+* tratamento de erros
+
+### Redis
+
+* Redis Client
+* Pub/Sub
+* Publisher
+* Subscriber
+* canais
+* comunicação assíncrona
+
+### Arquitetura
+
+* Singleton
+* separação de responsabilidades
+* gerenciamento de conexões
+* broadcast de eventos
+* comunicação entre processos
+
+### Docker
+
+* Dockerfile
+* Docker Image
+* Docker Container
+* Docker Compose
+* Docker Network
+* Service Discovery
+* Environment Variables
+* Port Mapping
+* Container Networking
+
+---
+
+# 📈 Evolução planejada
+
+O projeto será evoluído progressivamente.
+
+## Etapa 1 — SSE básico
+
+Implementação inicial:
+
+```text
+Browser
+   │
+   │ SSE
+   ▼
 Express
-     │
-     ├── SSE Client A
-     ├── SSE Client B
-     └── SSE Client C
 ```
-
-Isso funciona.
-
-Mas imagine uma aplicação escalada horizontalmente:
-
-```text
-                Load Balancer
-                     │
-          ┌──────────┼──────────┐
-          ▼          ▼          ▼
-       Node 1      Node 2      Node 3
-```
-
-Usuários diferentes podem estar conectados a servidores diferentes.
-
-Exemplo:
-
-```text
-User A ──► Node 1
-User B ──► Node 2
-User C ──► Node 3
-```
-
-Se uma notificação chegar no Node 1:
-
-```text
-User A
-   │
-   ▼
-Node 1
-```
-
-Como Node 1 avisaria Node 2 e Node 3?
-
-É aqui que Redis Pub/Sub ajuda.
 
 ---
 
-# 31. Redis distribuindo eventos
+## Etapa 2 — Redis Pub/Sub
 
-Temos:
-
-```text
-                   Redis
-                     │
-        ┌────────────┼────────────┐
-        ▼            ▼            ▼
-     Node 1        Node 2       Node 3
-        │            │            │
-        ▼            ▼            ▼
-      User A       User B       User C
-```
-
-Cada aplicação Node possui seu Subscriber.
-
-Quando alguém publica:
-
-```text
-Node 1
-  │
-  │ PUBLISH
-  ▼
-Redis
-  │
-  ├────► Subscriber Node 1
-  ├────► Subscriber Node 2
-  └────► Subscriber Node 3
-```
-
-Cada Node pode então enviar o evento para seus próprios clientes SSE.
-
----
-
-# 32. Arquitetura em produção
-
-Uma arquitetura mais próxima de produção poderia ser:
-
-```text
-                       INTERNET
-                           │
-                           ▼
-                    Load Balancer
-                           │
-             ┌─────────────┼─────────────┐
-             │             │             │
-             ▼             ▼             ▼
-          Node.js       Node.js       Node.js
-          Instance      Instance      Instance
-             │             │             │
-             │             │             │
-             └─────────────┼─────────────┘
-                           │
-                           ▼
-                        Redis
-                       Pub/Sub
-```
-
-Cada processo Node mantém:
-
-```text
-1 Publisher
-1 Subscriber
-N conexões SSE
-```
-
-Onde `N` é a quantidade de clientes conectados naquela instância.
-
----
-
-# 33. Uma limitação importante do Redis Pub/Sub
-
-Redis Pub/Sub possui semântica **at-most-once**.
-
-Ou seja, se um subscriber estiver desconectado no momento da publicação, ele pode perder a mensagem.
-
-Exemplo:
-
-```text
-Redis
-  │
-  │ PUBLISH
-  ▼
-Subscriber desconectado
-```
-
-A mensagem não fica esperando para ser entregue posteriormente.
-
-Se sua aplicação precisa de mensagens persistentes, processamento garantido ou reprocessamento, considere tecnologias como:
-
-* Redis Streams;
-* RabbitMQ;
-* Apache Kafka;
-* outros sistemas de mensageria.
-
----
-
-# 34. SSE também possui limitações
-
-SSE é excelente para comunicação:
-
-```text
-SERVER
-   │
-   ▼
-CLIENT
-```
-
-Mas não é uma solução universal para realtime.
-
-Se você precisa de comunicação bidirecional intensa:
-
-```text
-CLIENT ◄──────────► SERVER
-```
-
-WebSocket pode ser mais apropriado.
-
----
-
-# 35. Por que não fazer tudo diretamente no `server.js`?
-
-Seria possível colocar tudo em:
-
-```text
-server.js
-```
-
-Mas rapidamente ele ficaria responsável por:
+Introdução do Redis:
 
 ```text
 Express
-Redis
-SSE
-Pub/Sub
-Configuração
-Validação
-Tratamento de erros
-Rotas
-Serviços
-```
-
-Separando:
-
-```text
-server.js
    │
-   ├── HTTP
-   ├── SSE
-   └── rotas
-       
-redis/
-   │
-   ├── publisher.js
-   └── subscriber.js
-```
-
-temos melhor separação de responsabilidades.
-
-Isso também facilita posteriormente evoluir para:
-
-```text
-src/
-├── config/
-├── controllers/
-├── services/
-├── redis/
-├── routes/
-├── middlewares/
-└── server.js
-```
-
----
-
-# 36. Princípios utilizados
-
-Este projeto introduz conceitos importantes de arquitetura backend:
-
-## Separation of Concerns
-
-Cada módulo possui uma responsabilidade específica.
-
-```text
-server.js
-    ↓
-HTTP / SSE
-
-publisher.js
-    ↓
-Redis PUBLISH
-
-subscriber.js
-    ↓
-Redis SUBSCRIBE
-```
-
----
-
-## Singleton
-
-Evita criar múltiplas instâncias desnecessárias do cliente Redis dentro do mesmo processo.
-
----
-
-## Pub/Sub
-
-Desacopla quem publica um evento de quem recebe o evento.
-
-```text
-Publisher
-    ↓
-Redis
-    ↓
-Subscriber
-```
-
----
-
-## Event-driven architecture
-
-A aplicação reage a eventos.
-
-Exemplo:
-
-```text
-Evento:
-"novo pedido criado"
-
-       ↓
-
+   ▼
 Redis Pub/Sub
-
-       ↓
-
-Subscribers
-
-       ↓
-
+   │
+   ▼
+Express
+   │
+   ▼
 SSE
-
-       ↓
-
-Interfaces atualizadas
 ```
 
 ---
 
-# 37. Fluxo mental para entender o projeto
+## Etapa 3 — Dockerização
 
-Quando estudar esse projeto, pense sempre nestas quatro perguntas:
-
-### 1. Como o navegador recebe eventos?
-
-SSE:
-
-```javascript
-new EventSource("/events");
-```
-
-### 2. Como o servidor mantém a conexão?
-
-```javascript
-clients.add(res);
-```
-
-e:
-
-```javascript
-res.write(...)
-```
-
-### 3. Como uma aplicação distribui a notificação?
-
-Redis Pub/Sub:
-
-```javascript
-publisher.publish(...)
-```
-
-e:
-
-```javascript
-subscriber.subscribe(...)
-```
-
-### 4. Por que não criar Redis para cada usuário?
-
-Porque usamos Singleton:
-
-```javascript
-getPublisher()
-getSubscriber()
-```
-
-reutilizando as conexões Redis.
-
----
-
-# 38. Resumo da arquitetura
+Backend e Redis executando dentro do Docker:
 
 ```text
-                     BROWSER
-                        │
-                        │ EventSource
-                        │
-                        ▼
-                  GET /events
-                        │
-                        ▼
-                    EXPRESS
-                        │
-                        │
-                 clients: Set
-                        │
-                        │
-                        ▲
-                        │
-                  res.write()
-                        │
-                        │
-                    SUBSCRIBER
-                        ▲
-                        │
-                        │ SUBSCRIBE
-                        │
-                      REDIS
-                        ▲
-                        │
-                        │ PUBLISH
-                        │
-                    PUBLISHER
-                        ▲
-                        │
-                        │
-                  POST /notify
-                        ▲
-                        │
-                     CLIENT
+Docker Compose
+│
+├── Node.js
+└── Redis
 ```
 
 ---
 
-# 39. Para onde evoluir este projeto?
+## Próximas evoluções
 
-Depois de entender completamente esta implementação, os próximos passos interessantes são:
+As próximas etapas deverão explorar conceitos como:
 
-1. Adicionar `dotenv`.
-2. Criar configuração centralizada.
-3. Separar Controller, Service e Routes.
-4. Criar autenticação.
-5. Associar SSE a usuários específicos.
-6. Criar canais por usuário.
-7. Implementar eventos SSE nomeados.
-8. Implementar heartbeat.
-9. Implementar reconexão.
-10. Adicionar `Last-Event-ID`.
-11. Implementar Redis Streams.
-12. Rodar múltiplas instâncias Node.
-13. Adicionar Load Balancer.
-14. Containerizar a aplicação.
-15. Adicionar testes automatizados.
-16. Adicionar observabilidade.
-17. Implementar graceful shutdown.
+* frontend dentro do Docker
+* múltiplas instâncias do backend
+* Load Balancer
+* Redis compartilhado entre instâncias
+* escalabilidade horizontal
+* gerenciamento de conexões SSE
+* heartbeat
+* reconexão automática
+* `Last-Event-ID`
+* event IDs
+* graceful shutdown
+* health checks
+* Docker healthcheck
+* observabilidade
+* métricas
+* logs estruturados
+* Redis Streams
+* filas
+* arquitetura distribuída
+* testes automatizados
+* testes de carga
+* possíveis limitações do SSE em ambientes distribuídos
 
-A partir daí, o projeto deixa de ser apenas um exemplo de SSE e começa a se aproximar de uma arquitetura de **notificações realtime distribuída**.
+O objetivo é transformar gradualmente este projeto de uma aplicação didática simples em uma arquitetura capaz de demonstrar conceitos utilizados em sistemas de produção.
+
+---
+
+# 📚 Objetivo de aprendizado
+
+O objetivo não é apenas fazer notificações aparecerem no navegador.
+
+O projeto busca compreender **por que cada componente existe e como eles se relacionam**.
+
+A evolução arquitetural pode ser resumida em:
+
+```text
+SSE
+ │
+ ├── conexão persistente
+ │
+ ▼
+Redis Pub/Sub
+ │
+ ├── comunicação entre processos
+ │
+ ▼
+Singleton
+ │
+ ├── reutilização das conexões Redis
+ │
+ ▼
+Docker
+ │
+ ├── isolamento
+ ├── reprodução do ambiente
+ └── networking
+ │
+ ▼
+Escalabilidade
+ │
+ ├── múltiplas instâncias
+ ├── Load Balancer
+ └── arquitetura distribuída
+```
+
+---
+
+# 👨‍💻 Autor
+
+Lucas Martins
+
+Projeto desenvolvido para estudo e aprofundamento em:
+
+* Backend
+* Node.js
+* Sistemas em tempo real
+* Redis
+* Docker
+* Arquitetura de software
+* Sistemas distribuídos
