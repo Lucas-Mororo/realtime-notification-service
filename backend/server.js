@@ -107,6 +107,60 @@ app.use(
 const clients = new Set();
 
 // ========================================
+// SSE HEARTBEAT
+// ========================================
+
+/**
+ * Intervalo utilizado para enviar heartbeat
+ * para as conexões SSE.
+ *
+ * O objetivo não é enviar dados da aplicação.
+ *
+ * O heartbeat serve para manter o fluxo HTTP
+ * ativo e evitar que proxies, load balancers
+ * ou outros intermediários considerem a conexão
+ * como inativa.
+ */
+const SSE_HEARTBEAT_INTERVAL = 30 * 1000;
+
+/**
+ * Envia um comentário SSE para todas as conexões
+ * atualmente abertas.
+ *
+ * Comentários SSE começam com ":".
+ *
+ * Exemplo enviado pela aplicação:
+ *
+ * : heartbeat
+ *
+ * Esse conteúdo não dispara nenhum listener
+ * de evento no EventSource.
+ */
+function sendSSEHeartbeat() {
+    console.log(
+        `[SSE] Heartbeat enviado para ${clients.size} cliente(s).`
+    );
+
+    for (const client of clients) {
+        try {
+            client.write(": heartbeat\n\n");
+        } catch (error) {
+            console.error(
+                "[SSE] Erro ao enviar heartbeat:",
+                error
+            );
+
+            clients.delete(client);
+        }
+    }
+}
+
+const heartbeatInterval = setInterval(
+    sendSSEHeartbeat,
+    SSE_HEARTBEAT_INTERVAL
+);
+
+// ========================================
 // SSE
 // ========================================
 
@@ -472,6 +526,7 @@ async function shutdown(signal) {
     console.log(
         `\n[Server] Recebido ${signal}. Encerrando...`
     );
+    clearInterval(heartbeatInterval);
 
     // ========================================
     // FECHA SSE
