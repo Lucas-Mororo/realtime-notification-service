@@ -9,6 +9,9 @@ const {
     getSubscriber,
 } = require("./redis/subscriber");
 
+const sseConnectionManager =
+    require("./sse/connection-manager");
+
 // ========================================
 // CONFIGURAÇÕES
 // ========================================
@@ -84,79 +87,21 @@ app.use(
 );
 
 // ========================================
-// CLIENTES SSE
-// ========================================
-
-/**
- * Armazena todas as conexões SSE atualmente
- * abertas.
- *
- * Cada navegador conectado possui uma resposta
- * HTTP mantida aberta pelo servidor.
- *
- * Exemplo:
- *
- * Cliente A ──┐
- * Cliente B ──┼──> clients
- * Cliente C ──┘
- *
- * Quando uma mensagem chega pelo Redis,
- * percorremos esse Set e enviamos a mensagem
- * para todos os clientes.
- */
-const clients = new Set();
-
-// ========================================
 // SSE HEARTBEAT
 // ========================================
 
 /**
- * Intervalo utilizado para enviar heartbeat
- * para as conexões SSE.
+ * Intervalo do heartbeat SSE.
  *
- * O objetivo não é enviar dados da aplicação.
- *
- * O heartbeat serve para manter o fluxo HTTP
- * ativo e evitar que proxies, load balancers
- * ou outros intermediários considerem a conexão
- * como inativa.
+ * A cada 30 segundos enviamos um comentário
+ * SSE para manter as conexões ativas.
  */
 const SSE_HEARTBEAT_INTERVAL = 30 * 1000;
 
-/**
- * Envia um comentário SSE para todas as conexões
- * atualmente abertas.
- *
- * Comentários SSE começam com ":".
- *
- * Exemplo enviado pela aplicação:
- *
- * : heartbeat
- *
- * Esse conteúdo não dispara nenhum listener
- * de evento no EventSource.
- */
-function sendSSEHeartbeat() {
-    console.log(
-        `[SSE] Heartbeat enviado para ${clients.size} cliente(s).`
-    );
-
-    for (const client of clients) {
-        try {
-            client.write(": heartbeat\n\n");
-        } catch (error) {
-            console.error(
-                "[SSE] Erro ao enviar heartbeat:",
-                error
-            );
-
-            clients.delete(client);
-        }
-    }
-}
-
 const heartbeatInterval = setInterval(
-    sendSSEHeartbeat,
+    () => {
+        sseConnectionManager.heartbeat();
+    },
     SSE_HEARTBEAT_INTERVAL
 );
 
@@ -213,11 +158,7 @@ app.get("/events", (req, res) => {
      * A partir deste momento o cliente poderá
      * receber eventos publicados no Redis.
      */
-    clients.add(res);
-
-    console.log(
-        `[SSE] Clientes conectados: ${clients.size} `
-    );
+    sseConnectionManager.add(res);
 
     // ========================================
     // EVENTO: CONNECTION
@@ -239,13 +180,13 @@ app.get("/events", (req, res) => {
      *     ...
      * );
      */
-    res.write("event: connection\n");
-    res.write(
-        `data: ${JSON.stringify({
+    sseConnectionManager.send(
+        res,
+        "connection",
+        {
             type: "connection",
             message: "Conectado ao servidor SSE",
-        })
-        } \n\n`
+        }
     );
 
     // ========================================
@@ -264,15 +205,9 @@ app.get("/events", (req, res) => {
      * - a conexão é interrompida.
      */
     req.on("close", () => {
-        clients.delete(res);
 
-        console.log(
-            "[SSE] Cliente desconectado."
-        );
+        sseConnectionManager.remove(res);
 
-        console.log(
-            `[SSE] Clientes conectados: ${clients.size} `
-        );
     });
 });
 
@@ -361,7 +296,7 @@ app.get("/health", (req, res) => {
 
     return res.json({
         status: "ok",
-        clients: clients.size,
+        clients: sseConnectionManager.getCount(),
         channel: CHANNEL,
     });
 });
@@ -416,46 +351,10 @@ async function startServer() {
                  * Agora ela precisa ser enviada
                  * para todos os navegadores conectados.
                  */
-                for (const client of clients) {
-
-                    try {
-                        /**
-                         * Define o tipo do evento SSE.
-                         *
-                         * O frontend poderá escutar:
-                         *
-                         * eventSource.addEventListener(
-                         *     "notification",
-                         *     ...
-                         * );
-                         */
-                        client.write(
-                            "event: notification\n"
-                        );
-
-                        /**
-                         * Envia o payload da mensagem.
-                         *
-                         * O JSON foi originalmente criado
-                         * pelo endpoint POST /notify.
-                         */
-                        client.write(
-                            `data: ${message} \n\n`
-                        );
-                    } catch (error) {
-                        console.error(
-                            "[SSE] Erro ao enviar mensagem:",
-                            error
-                        );
-
-                        /**
-                         * Se não for possível escrever
-                         * na conexão, removemos o cliente
-                         * da lista de conexões ativas.
-                         */
-                        clients.delete(client);
-                    }
-                }
+                sseConnectionManager.broadcast(
+                    "notification",
+                    message
+                );
             }
         );
 
@@ -532,22 +431,7 @@ async function shutdown(signal) {
     // FECHA SSE
     // ========================================
 
-    for (const client of clients) {
-
-        try {
-
-            client.end();
-
-        } catch (error) {
-
-            console.error(
-                "[SSE] Erro ao fechar conexão:",
-                error
-            );
-        }
-    }
-
-    clients.clear();
+    sseConnectionManager.closeAll();
 
     // ========================================
     // FECHA PUBLISHER
