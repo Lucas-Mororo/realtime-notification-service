@@ -23,20 +23,38 @@
  */
 class SSEConnectionManager {
     constructor() {
+
         /**
          * Armazena as conexões SSE agrupadas por usuário.
          *
          * Estrutura:
          *
          * Map<
-         *     userId,
-         *     Set<Response>
+         *   userId,
+         *   Set<ServerResponse>
          * >
          *
-         * Um usuário pode possuir várias conexões
-         * simultâneas.
+         * Exemplo:
+         *
+         * {
+         *     "lucas" -> Set(res1, res2),
+         *     "pedro" -> Set(res3)
+         * }
          */
-        this.clients = new Map();
+        this.connections = new Map();
+
+        /**
+         * Armazena os usuários pertencentes
+         * a cada sala.
+         *
+         * Estrutura:
+         *
+         * Map<
+         *   roomId,
+         *   Set<userId>
+         * >
+         */
+        this.rooms = new Map();
     }
 
     // ========================================
@@ -52,18 +70,36 @@ class SSEConnectionManager {
      * @param {string} userId
      * @param {Response} client
      */
-    add(userId, client) {
-        if (!this.clients.has(userId)) {
-            this.clients.set(userId, new Set());
+    add(userId, roomId, client) {
+
+        if (!this.connections.has(userId)) {
+
+            this.connections.set(
+                userId,
+                new Set()
+            );
         }
 
-        const userClients = this.clients.get(userId);
+        this.connections.get(userId).add(client);
 
-        userClients.add(client);
+        if (!this.rooms.has(roomId)) {
 
-        console.log(`[SSE] Conexão adicionada para usuário ${userId}.`);
+            this.rooms.set(
+                roomId,
+                new Set()
+            );
+        }
 
-        console.log(`[SSE] Conexões totais: ${this.getCount()}`);
+        this.rooms.get(roomId).add(userId);
+
+        console.log(
+            `[SSE] Usuário ${userId} entrou na sala ${roomId}.`
+        );
+
+        console.log(
+            `[SSE] Usuários na sala ${roomId}:`,
+            this.rooms.get(roomId).size
+        );
     }
 
     // ========================================
@@ -76,29 +112,35 @@ class SSEConnectionManager {
      * Se o usuário não possuir mais conexões,
      * ele também será removido do Map.
      *
-     * @param {string} userId
      * @param {Response} client
      */
-    remove(userId, client) {
-        const userClients = this.clients.get(userId);
+    remove(userId, roomId, client) {
 
-        if (!userClients) {
-            return;
+        const userConnections =
+            this.connections.get(userId);
+
+        if (userConnections) {
+            userConnections.delete(client);
+
+            if (userConnections.size === 0) {
+                this.connections.delete(userId);
+            }
         }
 
-        userClients.delete(client);
+        const roomUsers =
+            this.rooms.get(roomId);
 
-        /**
-         * Se não existem mais conexões para esse
-         * usuário, removemos o usuário do Map.
-         */
-        if (userClients.size === 0) {
-            this.clients.delete(userId);
+        if (roomUsers) {
+            roomUsers.delete(userId);
+
+            if (roomUsers.size === 0) {
+                this.rooms.delete(roomId);
+            }
         }
 
-        console.log(`[SSE] Conexão removida do usuário ${userId}.`);
-
-        console.log(`[SSE] Conexões totais: ${this.getCount()}`);
+        console.log(
+            `[SSE] Usuário ${userId} saiu da sala ${roomId}.`
+        );
     }
 
     // ========================================
@@ -114,7 +156,7 @@ class SSEConnectionManager {
 
         let count = 0;
 
-        for (const userClients of this.clients.values()) {
+        for (const userClients of this.connections.values()) {
             count += userClients.size;
         }
 
@@ -130,7 +172,7 @@ class SSEConnectionManager {
     getUserConnectionCount(userId) {
 
         const userClients =
-            this.clients.get(userId);
+            this.connections.get(userId);
 
         if (!userClients) {
             return 0;
@@ -156,14 +198,33 @@ class SSEConnectionManager {
      * @param {object|string} data
      */
     send(client, event, data) {
+
         try {
-            const payload = typeof data === "string" ? data : JSON.stringify(data);
+
+            if (!client || typeof client.write !== "function") {
+
+                console.error(
+                    "[SSE] Cliente inválido:",
+                    client
+                );
+
+                return;
+            }
+
+            const payload =
+                typeof data === "string"
+                    ? data
+                    : JSON.stringify(data);
 
             client.write(`event: ${event}\n`);
-
             client.write(`data: ${payload}\n\n`);
+
         } catch (error) {
-            console.error("[SSE] Erro ao enviar evento:", error);
+
+            console.error(
+                "[SSE] Erro ao enviar evento:",
+                error
+            );
 
             this.remove(client);
         }
@@ -180,7 +241,7 @@ class SSEConnectionManager {
     sendToUser(userId, event, data) {
 
         const userClients =
-            this.clients.get(userId);
+            this.connections.get(userId);
 
         /**
          * Usuário não possui nenhuma conexão ativa.
@@ -223,9 +284,119 @@ class SSEConnectionManager {
      * @param {string} event
      * @param {object|string} data
      */
-    broadcast(event, data) {
-        for (const client of this.clients) {
-            this.send(client, event, data);
+    broadcast(roomId, event, data) {
+        const users =
+            this.rooms.get(roomId);
+
+        if (!users) {
+            return;
+        }
+
+        for (const userId of users) {
+            const clients =
+                this.connections.get(userId);
+
+            if (!clients) {
+                continue;
+            }
+
+            for (const client of clients) {
+                this.send(client, event, data);
+            }
+        }
+    }
+
+    // ========================================
+    // ROOMS
+    // ========================================
+
+    /**
+     * Adiciona um usuário a uma sala.
+     *
+     * @param {string} roomId
+     * @param {string} userId
+     */
+    joinRoom(roomId, userId) {
+
+        if (!this.rooms.has(roomId)) {
+            this.rooms.set(
+                roomId,
+                new Set()
+            );
+        }
+
+        const roomUsers =
+            this.rooms.get(roomId);
+
+        roomUsers.add(userId);
+
+        console.log(
+            `[SSE] Usuário ${userId} entrou na sala ${roomId}.`
+        );
+
+        console.log(
+            `[SSE] Usuários na sala: ${roomUsers.size}`
+        );
+    }
+
+    /**
+     * Remove um usuário de uma sala.
+     *
+     * Se a sala ficar vazia, ela também será
+     * removida do Map.
+     *
+     * @param {string} roomId
+     * @param {string} userId
+     */
+    leaveRoom(roomId, userId) {
+
+        const roomUsers =
+            this.rooms.get(roomId);
+
+        if (!roomUsers) {
+            return;
+        }
+
+        roomUsers.delete(userId);
+
+        if (roomUsers.size === 0) {
+            this.rooms.delete(roomId);
+        }
+
+        console.log(
+            `[SSE] Usuário ${userId} saiu da sala ${roomId}.`
+        );
+    }
+
+    /**
+     * Envia um evento para todos os usuários
+     * conectados a uma determinada sala.
+     *
+     * @param {string} roomId
+     * @param {string} event
+     * @param {object|string} data
+     */
+    broadcastToRoom(roomId, event, data) {
+
+        const roomUsers =
+            this.rooms.get(roomId);
+
+        if (!roomUsers) {
+
+            console.log(
+                `[SSE] Sala ${roomId} não possui usuários conectados.`
+            );
+
+            return;
+        }
+
+        for (const userId of roomUsers) {
+
+            this.sendToUser(
+                userId,
+                event,
+                data
+            );
         }
     }
 
@@ -247,13 +418,23 @@ class SSEConnectionManager {
      * dispara nenhum evento EventSource.
      */
     heartbeat() {
-        for (const client of this.clients) {
-            try {
-                client.write(": heartbeat\n\n");
-            } catch (error) {
-                console.error("[SSE] Erro no heartbeat:", error);
+        for (const clients of this.connections.values()) {
 
-                this.remove(client);
+            for (const client of clients) {
+
+                try {
+
+                    client.write(": heartbeat\n\n");
+
+                } catch (error) {
+
+                    console.error(
+                        "[SSE] Erro no heartbeat:",
+                        error
+                    );
+
+                    this.remove(client);
+                }
             }
         }
     }
@@ -269,17 +450,32 @@ class SSEConnectionManager {
      * da aplicação.
      */
     closeAll() {
-        for (const client of this.clients) {
-            try {
-                client.end();
-            } catch (error) {
-                console.error("[SSE] Erro ao fechar cliente:", error);
+
+        for (const clients of this.connections.values()) {
+
+            for (const client of clients) {
+
+                try {
+
+                    client.end();
+
+                } catch (error) {
+
+                    console.error(
+                        "[SSE] Erro ao fechar cliente:",
+                        error
+                    );
+                }
             }
         }
 
-        this.clients.clear();
+        this.connections.clear();
 
-        console.log("[SSE] Todas as conexões foram encerradas.");
+        this.rooms.clear();
+
+        console.log(
+            "[SSE] Todas as conexões foram encerradas."
+        );
     }
 }
 

@@ -6,22 +6,38 @@ const REDIS_URL =
 /**
  * Instância Singleton do Redis Publisher.
  *
- * Mantemos essa variável fora da função para que
- * todas as chamadas de getPublisher() reutilizem
- * a mesma conexão Redis.
+ * Essa variável mantém a única conexão Publisher
+ * utilizada pela aplicação.
  */
 let publisher = null;
 
 /**
- * Retorna a instância única do Redis Publisher.
+ * Retorna a instância atual do Publisher.
+ *
+ * Diferentemente de getPublisher(), esta função
+ * não cria nem conecta uma nova instância.
+ *
+ * Retorna:
+ *
+ * - Redis client, caso exista;
+ * - null, caso ainda não tenha sido criado.
+ */
+function getPublisherInstance() {
+    return publisher;
+}
+
+/**
+ * Retorna o Redis Publisher conectado.
  *
  * Na primeira chamada:
- * - cria o cliente;
- * - configura tratamento de erros;
- * - conecta ao Redis.
+ *
+ * 1. Cria o cliente Redis.
+ * 2. Registra tratamento de erros.
+ * 3. Estabelece conexão.
  *
  * Nas chamadas seguintes:
- * - retorna a conexão já existente.
+ *
+ * - Reutiliza a mesma instância Singleton.
  */
 async function getPublisher() {
 
@@ -33,10 +49,6 @@ async function getPublisher() {
         url: REDIS_URL,
     });
 
-    /**
-     * Trata erros que podem acontecer
-     * durante a utilização do Redis.
-     */
     publisher.on("error", (error) => {
         console.error(
             "[Redis Publisher] Erro:",
@@ -61,17 +73,41 @@ async function getPublisher() {
             error
         );
 
-        /**
-         * Se a conexão falhar, descartamos
-         * a instância para permitir uma nova
-         * tentativa posteriormente.
-         */
         publisher = null;
 
         throw error;
     }
 }
 
+/**
+ * Fecha a conexão do Publisher.
+ *
+ * Essa função é utilizada durante o graceful shutdown
+ * da aplicação.
+ */
+async function closePublisher() {
+
+    const instance =
+        getPublisherInstance();
+
+    if (!instance) {
+        return;
+    }
+
+    if (instance.isOpen) {
+
+        await instance.quit();
+
+        console.log(
+            "[Redis Publisher] Conexão encerrada."
+        );
+    }
+
+    publisher = null;
+}
+
 module.exports = {
     getPublisher,
+    getPublisherInstance,
+    closePublisher,
 };

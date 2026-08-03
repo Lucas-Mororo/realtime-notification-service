@@ -3,10 +3,14 @@ const cors = require("cors");
 
 const {
     getPublisher,
+    getPublisherInstance,
+    closePublisher,
 } = require("./redis/publisher");
 
 const {
     getSubscriber,
+    getSubscriberInstance,
+    closeSubscriber,
 } = require("./redis/subscriber");
 
 const sseConnectionManager =
@@ -18,7 +22,8 @@ const sseConnectionManager =
 
 const app = express();
 
-const PORT = process.env.PORT || 3000;
+const PORT =
+    process.env.PORT || 3000;
 
 const CHANNEL =
     process.env.REDIS_CHANNEL || "notifications";
@@ -27,7 +32,7 @@ const CHANNEL =
  * Origens permitidas para o frontend.
  *
  * Durante o desenvolvimento podemos acessar
- * o frontend através de:
+ * a aplicação através de:
  *
  * http://localhost:5500
  * http://127.0.0.1:5500
@@ -46,35 +51,30 @@ app.use(express.json());
 /**
  * Configuração do CORS.
  *
- * O navegador envia o header:
- *
- * Origin: http://127.0.0.1:5500
- *
- * ou:
- *
- * Origin: http://localhost:5500
- *
- * O callback verifica se a origem está
- * na lista de origens permitidas.
+ * Permite que o frontend faça requisições
+ * para a API localizada em outra origem.
  */
 app.use(
     cors({
         origin: (origin, callback) => {
+
             /**
-             * Algumas requisições podem não possuir
-             * Origin, como chamadas feitas diretamente
-             * através do curl.
+             * Requisições sem Origin podem acontecer
+             * em chamadas feitas diretamente por curl,
+             * Postman ou outros clientes HTTP.
              */
             if (!origin) {
                 return callback(null, true);
             }
 
-            if (ALLOWED_ORIGINS.includes(origin)) {
+            if (
+                ALLOWED_ORIGINS.includes(origin)
+            ) {
                 return callback(null, true);
             }
 
             console.warn(
-                `[CORS] Origem bloqueada: ${origin} `
+                `[CORS] Origem bloqueada: ${origin}`
             );
 
             return callback(
@@ -91,27 +91,56 @@ app.use(
 // ========================================
 
 /**
- * Intervalo do heartbeat SSE.
+ * Intervalo utilizado pelo heartbeat SSE.
  *
- * A cada 30 segundos enviamos um comentário
- * SSE para manter as conexões ativas.
+ * A cada 30 segundos o Connection Manager
+ * envia um comentário SSE para as conexões
+ * ativas.
+ *
+ * O comentário possui o formato:
+ *
+ * : heartbeat
+ *
+ * Esse conteúdo não dispara um evento no frontend,
+ * mas ajuda a manter a conexão HTTP ativa.
  */
-const SSE_HEARTBEAT_INTERVAL = 30 * 1000;
+const SSE_HEARTBEAT_INTERVAL =
+    30 * 1000;
 
-const heartbeatInterval = setInterval(
-    () => {
+const heartbeatInterval =
+    setInterval(() => {
+
         sseConnectionManager.heartbeat();
-    },
-    SSE_HEARTBEAT_INTERVAL
-);
+
+    }, SSE_HEARTBEAT_INTERVAL);
 
 // ========================================
 // SSE
 // ========================================
 
+/**
+ * Endpoint responsável por estabelecer
+ * uma conexão Server-Sent Events.
+ *
+ * Exemplo:
+ *
+ * GET /events?userId=lucas&roomId=room-123
+ *
+ * O userId identifica o usuário.
+ *
+ * O roomId identifica a sala em que
+ * esse usuário deseja receber mensagens.
+ */
 app.get("/events", (req, res) => {
 
-    const { userId } = req.query;
+    const {
+        userId,
+        roomId,
+    } = req.query;
+
+    // ========================================
+    // VALIDAÇÃO
+    // ========================================
 
     if (!userId) {
 
@@ -120,7 +149,17 @@ app.get("/events", (req, res) => {
         });
     }
 
-    console.log(`[SSE] Novo cliente conectado. Usuário: ${userId}`);
+    if (!roomId) {
+
+        return res.status(400).json({
+            error: "roomId é obrigatório.",
+        });
+    }
+
+    console.log(
+        `[SSE] Novo cliente conectado. ` +
+        `Usuário: ${userId} | Sala: ${roomId}`
+    );
 
     // ========================================
     // HEADERS SSE
@@ -136,8 +175,7 @@ app.get("/events", (req, res) => {
     );
 
     /**
-     * Impede que intermediários armazenem
-     * a resposta em cache.
+     * Impede cache da conexão.
      */
     res.setHeader(
         "Cache-Control",
@@ -158,36 +196,36 @@ app.get("/events", (req, res) => {
     res.flushHeaders();
 
     // ========================================
-    // REGISTRA CLIENTE
+    // REGISTRA CONEXÃO
     // ========================================
 
     /**
-     * Guarda a conexão no Set.
+     * Registra a conexão no Connection Manager.
      *
-     * A partir deste momento o cliente poderá
-     * receber eventos publicados no Redis.
+     * O Manager será responsável por associar:
+     *
+     * userId
+     *     ↓
+     * roomId
+     *     ↓
+     * res
+     *
+     * Dessa forma podemos descobrir posteriormente
+     * quais clientes pertencem a determinada sala.
      */
-    sseConnectionManager.add(userId, res);
+    sseConnectionManager.add(
+        userId,
+        roomId,
+        res
+    );
 
     // ========================================
-    // EVENTO: CONNECTION
+    // EVENTO DE CONEXÃO
     // ========================================
 
     /**
-     * Envia um evento SSE nomeado informando
-     * ao frontend que a conexão foi estabelecida.
-     *
-     * Formato:
-     *
-     * event: connection
-     * data: {...}
-     *
-     * No frontend:
-     *
-     * eventSource.addEventListener(
-     *     "connection",
-     *     ...
-     * );
+     * Envia um evento informando ao frontend
+     * que a conexão foi estabelecida.
      */
     sseConnectionManager.send(
         res,
@@ -195,28 +233,31 @@ app.get("/events", (req, res) => {
         {
             type: "connection",
             message: "Conectado ao servidor SSE",
+            userId,
+            roomId,
         }
     );
 
     // ========================================
-    // ENCERRAMENTO DA CONEXÃO
+    // ENCERRAMENTO
     // ========================================
 
     /**
-     * O evento "close" é disparado quando
-     * o cliente encerra a conexão HTTP.
-     *
-     * Isso pode acontecer quando:
-     *
-     * - o usuário fecha a página;
-     * - o navegador navega para outra página;
-     * - EventSource.close() é chamado;
-     * - a conexão é interrompida.
+     * Quando o navegador fecha a conexão,
+     * removemos o cliente do Connection Manager.
      */
     req.on("close", () => {
 
-        sseConnectionManager.remove(userId, res);
+        console.log(
+            `[SSE] Cliente desconectado. ` +
+            `Usuário: ${userId} | Sala: ${roomId}`
+        );
 
+        sseConnectionManager.remove(
+            userId,
+            roomId,
+            res
+        );
     });
 });
 
@@ -224,11 +265,36 @@ app.get("/events", (req, res) => {
 // NOTIFICAÇÃO
 // ========================================
 
+/**
+ * Publica uma mensagem no Redis.
+ *
+ * O Redis não envia diretamente para os navegadores.
+ *
+ * O fluxo é:
+ *
+ * HTTP POST
+ *    ↓
+ * Express
+ *    ↓
+ * Redis Publisher
+ *    ↓
+ * Redis Pub/Sub
+ *    ↓
+ * Redis Subscriber
+ *    ↓
+ * SSE Connection Manager
+ *    ↓
+ * Navegadores da sala
+ */
 app.post("/notify", async (req, res) => {
 
     try {
 
-        const { userId, message } = req.body;
+        const {
+            userId,
+            roomId,
+            message,
+        } = req.body;
 
         // ========================================
         // VALIDAÇÃO
@@ -241,7 +307,17 @@ app.post("/notify", async (req, res) => {
             });
         }
 
-        if (!message) {
+        if (!roomId) {
+
+            return res.status(400).json({
+                error: "roomId é obrigatório.",
+            });
+        }
+
+        if (
+            typeof message !== "string" ||
+            !message.trim()
+        ) {
 
             return res.status(400).json({
                 error: "A mensagem é obrigatória.",
@@ -253,10 +329,12 @@ app.post("/notify", async (req, res) => {
         // ========================================
 
         const notification = {
-            type: "notification",
+            type: "message",
+            roomId,
             userId,
             message: message.trim(),
-            timestamp: new Date().toISOString(),
+            timestamp:
+                new Date().toISOString(),
         };
 
         // ========================================
@@ -266,14 +344,16 @@ app.post("/notify", async (req, res) => {
         /**
          * Obtém o Publisher Singleton.
          *
-         * A aplicação reutiliza a mesma conexão
-         * Redis em vez de criar uma nova conexão
-         * a cada requisição HTTP.
+         * Se ainda não existir, getPublisher()
+         * cria e conecta a instância.
+         *
+         * Se já existir, a mesma conexão é reutilizada.
          */
-        const publisher = await getPublisher();
+        const publisher =
+            await getPublisher();
 
         /**
-         * Publica a notificação no canal Redis.
+         * Publica a mensagem no canal Redis.
          */
         await publisher.publish(
             CHANNEL,
@@ -287,7 +367,7 @@ app.post("/notify", async (req, res) => {
 
         return res.json({
             success: true,
-            message: "Notificação publicada.",
+            message: "Mensagem publicada.",
         });
 
     } catch (error) {
@@ -307,12 +387,37 @@ app.post("/notify", async (req, res) => {
 // HEALTH CHECK
 // ========================================
 
+/**
+ * Endpoint utilizado para verificar
+ * o estado básico da aplicação.
+ */
 app.get("/health", (req, res) => {
+
+    const publisher =
+        getPublisherInstance();
+
+    const subscriber =
+        getSubscriberInstance();
 
     return res.json({
         status: "ok",
-        clients: sseConnectionManager.getCount(),
+
+        clients:
+            sseConnectionManager.getCount(),
+
         channel: CHANNEL,
+
+        redis: {
+            publisher:
+                Boolean(
+                    publisher?.isOpen
+                ),
+
+            subscriber:
+                Boolean(
+                    subscriber?.isOpen
+                ),
+        },
     });
 });
 
@@ -320,37 +425,39 @@ app.get("/health", (req, res) => {
 // INICIALIZAÇÃO
 // ========================================
 
+/**
+ * Inicializa todos os recursos necessários
+ * antes de disponibilizar o servidor.
+ */
 async function startServer() {
 
     try {
+
         // ========================================
         // REDIS SUBSCRIBER
         // ========================================
 
         /**
          * O Subscriber precisa estar conectado
-         * antes de começar a receber mensagens.
-         *
-         * O Singleton garante que teremos uma
-         * única conexão Subscriber reutilizável
-         * durante o ciclo de vida da aplicação.
+         * antes de receber mensagens.
          */
-        const subscriber = await getSubscriber();
+        const subscriber =
+            await getSubscriber();
 
         // ========================================
         // REDIS SUBSCRIBE
         // ========================================
 
         /**
-         * Inscreve o Subscriber no canal Redis.
+         * Inscreve o Subscriber no canal.
          *
-         * Sempre que o Publisher publicar uma
-         * mensagem nesse canal, este callback
-         * será executado.
+         * Toda mensagem publicada nesse canal
+         * será recebida pelo callback.
          */
         await subscriber.subscribe(
             CHANNEL,
             (message) => {
+
                 console.log(
                     "[Redis Subscriber] Mensagem recebida:",
                     message
@@ -361,10 +468,12 @@ async function startServer() {
                 // ========================================
 
                 /**
-                 * A mensagem chegou do Redis.
+                 * Encaminha a mensagem para o
+                 * Connection Manager.
                  *
-                 * Agora ela precisa ser enviada
-                 * para todos os navegadores conectados.
+                 * O Connection Manager é responsável
+                 * por decidir quais clientes devem
+                 * receber a mensagem com base no roomId.
                  */
                 sseConnectionManager.broadcast(
                     "notification",
@@ -374,43 +483,49 @@ async function startServer() {
         );
 
         console.log(
-            `[Redis Subscriber] Inscrito no canal: ${CHANNEL} `
+            `[Redis Subscriber] Inscrito no canal: ${CHANNEL}`
         );
 
         // ========================================
         // SERVER
         // ========================================
 
-        app.listen(PORT, () => {
-            console.log("");
+        app.listen(
+            PORT,
+            () => {
 
-            console.log(
-                "===================================="
-            );
+                console.log("");
 
-            console.log(
-                `API: http://localhost:${PORT}`
-            );
+                console.log(
+                    "===================================="
+                );
 
-            console.log(
-                `SSE:      http://localhost:${PORT}/events`
-            );
+                console.log(
+                    `API:      http://localhost:${PORT}`
+                );
 
-            console.log(
-                `Health:   http://localhost:${PORT}/health`
-            );
+                console.log(
+                    `SSE:      http://localhost:${PORT}/events`
+                );
 
-            console.log(
-                "Frontend: localhost:5500 / 127.0.0.1:5500"
-            );
+                console.log(
+                    `Health:   http://localhost:${PORT}/health`
+                );
 
-            console.log(
-                "===================================="
-            );
+                console.log(
+                    "Frontend: localhost:5500 / 127.0.0.1:5500"
+                );
 
-            console.log("");
-        });
+                console.log(
+                    "===================================="
+                );
+
+                console.log("");
+            }
+        );
+
     } catch (error) {
+
         console.error(
             "[Server] Falha ao iniciar aplicação:",
             error
@@ -425,42 +540,51 @@ async function startServer() {
 // ========================================
 
 /**
- * Executado quando o processo recebe um
- * sinal de encerramento.
+ * Executa o graceful shutdown da aplicação.
  *
- * O objetivo é realizar um graceful shutdown:
+ * Ordem:
  *
- * 1. Fechar conexões SSE.
- * 2. Limpar o Set de clientes.
- * 3. Encerrar Publisher Redis.
- * 4. Encerrar Subscriber Redis.
- * 5. Encerrar o processo.
+ * 1. Para o heartbeat.
+ * 2. Fecha conexões SSE.
+ * 3. Fecha Publisher Redis.
+ * 4. Fecha Subscriber Redis.
+ * 5. Finaliza o processo.
  */
 async function shutdown(signal) {
+
     console.log(
         `\n[Server] Recebido ${signal}. Encerrando...`
     );
-    clearInterval(heartbeatInterval);
 
     // ========================================
-    // FECHA SSE
+    // HEARTBEAT
+    // ========================================
+
+    clearInterval(
+        heartbeatInterval
+    );
+
+    // ========================================
+    // SSE
     // ========================================
 
     sseConnectionManager.closeAll();
 
     // ========================================
-    // FECHA PUBLISHER
+    // REDIS PUBLISHER
     // ========================================
 
     try {
-        const publisher = await getPublisher();
 
-        if (publisher && publisher.isOpen) {
-            await publisher.quit();
+        const publisher =
+            getPublisherInstance();
 
-            console.log(
-                "[Redis Publisher] Conexão encerrada."
-            );
+        if (
+            publisher &&
+            publisher.isOpen
+        ) {
+
+            await closePublisher();
         }
 
     } catch (error) {
@@ -472,18 +596,20 @@ async function shutdown(signal) {
     }
 
     // ========================================
-    // FECHA SUBSCRIBER
+    // REDIS SUBSCRIBER
     // ========================================
 
     try {
-        const subscriber = await getSubscriber();
 
-        if (subscriber && subscriber.isOpen) {
-            await subscriber.quit();
+        const subscriber =
+            getSubscriberInstance();
 
-            console.log(
-                "[Redis Subscriber] Conexão encerrada."
-            );
+        if (
+            subscriber &&
+            subscriber.isOpen
+        ) {
+
+            await closeSubscriber();
         }
 
     } catch (error) {

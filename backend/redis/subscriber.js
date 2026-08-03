@@ -6,21 +6,37 @@ const REDIS_URL =
 /**
  * Instância Singleton do Redis Subscriber.
  *
- * Essa conexão será utilizada para escutar
- * mensagens publicadas no Redis.
+ * Essa conexão será utilizada exclusivamente
+ * para receber mensagens publicadas no Redis.
  */
 let subscriber = null;
 
 /**
- * Retorna a instância única do Redis Subscriber.
+ * Retorna a instância atual do Subscriber.
+ *
+ * Não cria conexão e não realiza conexão com Redis.
+ *
+ * Retorna:
+ *
+ * - Redis client, caso exista;
+ * - null, caso ainda não tenha sido criado.
+ */
+function getSubscriberInstance() {
+    return subscriber;
+}
+
+/**
+ * Retorna o Redis Subscriber conectado.
  *
  * Na primeira chamada:
- * - cria o cliente;
- * - configura tratamento de erros;
- * - conecta ao Redis.
+ *
+ * 1. Cria o cliente Redis.
+ * 2. Configura tratamento de erros.
+ * 3. Conecta ao Redis.
  *
  * Nas chamadas seguintes:
- * - reutiliza a mesma conexão.
+ *
+ * - Reutiliza a mesma instância Singleton.
  */
 async function getSubscriber() {
 
@@ -32,9 +48,6 @@ async function getSubscriber() {
         url: REDIS_URL,
     });
 
-    /**
-     * Trata erros do cliente Redis.
-     */
     subscriber.on("error", (error) => {
         console.error(
             "[Redis Subscriber] Erro:",
@@ -65,6 +78,35 @@ async function getSubscriber() {
     }
 }
 
+/**
+ * Fecha a conexão do Subscriber.
+ *
+ * Essa função é utilizada durante o graceful shutdown
+ * da aplicação.
+ */
+async function closeSubscriber() {
+
+    const instance =
+        getSubscriberInstance();
+
+    if (!instance) {
+        return;
+    }
+
+    if (instance.isOpen) {
+
+        await instance.quit();
+
+        console.log(
+            "[Redis Subscriber] Conexão encerrada."
+        );
+    }
+
+    subscriber = null;
+}
+
 module.exports = {
     getSubscriber,
+    getSubscriberInstance,
+    closeSubscriber,
 };

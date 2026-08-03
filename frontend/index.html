@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="pt-BR">
 
 <head>
@@ -7,7 +8,7 @@
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>SSE + Redis Notifications</title>
+    <title>SSE + Redis Chat</title>
 
     <style>
         * {
@@ -17,10 +18,12 @@
         body {
             margin: 0;
             padding: 40px 20px;
+
             font-family:
                 Arial,
                 Helvetica,
                 sans-serif;
+
             background: #f4f4f5;
             color: #18181b;
         }
@@ -40,10 +43,23 @@
             color: #71717a;
         }
 
+        .room-info {
+            margin-top: 20px;
+            padding: 12px 16px;
+
+            border-radius: 8px;
+
+            background: #e4e4e7;
+
+            font-size: 14px;
+        }
+
         .status {
             margin: 24px 0;
             padding: 12px 16px;
+
             border-radius: 8px;
+
             background: #e4e4e7;
         }
 
@@ -60,29 +76,47 @@
         form {
             display: flex;
             gap: 10px;
+
             margin-bottom: 24px;
         }
 
         input {
             flex: 1;
+
             padding: 12px;
+
             border: 1px solid #d4d4d8;
             border-radius: 8px;
+
             font-size: 16px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #18181b;
         }
 
         button {
             padding: 12px 20px;
+
             border: 0;
             border-radius: 8px;
+
             cursor: pointer;
+
             background: #18181b;
             color: white;
+
             font-weight: 600;
         }
 
         button:hover {
             opacity: 0.9;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         .notifications {
@@ -93,14 +127,34 @@
 
         .notification {
             padding: 16px;
+
             background: white;
+
             border: 1px solid #e4e4e7;
             border-radius: 8px;
         }
 
-        .notification strong {
-            display: block;
-            margin-bottom: 6px;
+        .notification-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+
+            margin-bottom: 8px;
+        }
+
+        .notification-user {
+            font-weight: 700;
+        }
+
+        .notification-room {
+            color: #71717a;
+            font-size: 12px;
+        }
+
+        .notification-message {
+            margin: 0 0 8px;
+
+            word-break: break-word;
         }
 
         .notification small {
@@ -114,11 +168,15 @@
 
     <main>
 
-        <h1>Real-time Notifications</h1>
+        <h1>Real-time Chat</h1>
 
         <p class="description">
             Server-Sent Events + Express + Redis Pub/Sub
         </p>
+
+        <div id="room-info" class="room-info">
+            Carregando informações da sala...
+        </div>
 
         <div id="status" class="status">
             Conectando ao servidor...
@@ -126,9 +184,10 @@
 
         <form id="notification-form">
 
-            <input id="message" type="text" placeholder="Digite uma notificação..." autocomplete="off" required>
+            <input id="message" type="text" placeholder="Digite uma mensagem..." autocomplete="off" maxlength="500"
+                required>
 
-            <button type="submit">
+            <button id="send-button" type="submit">
                 Enviar
             </button>
 
@@ -137,7 +196,6 @@
         <div id="notifications" class="notifications"></div>
 
     </main>
-
 
     <script>
 
@@ -149,8 +207,15 @@
             "http://localhost:3000";
 
 
+        // ========================================
+        // ELEMENTOS DA INTERFACE
+        // ========================================
+
         const statusElement =
             document.getElementById("status");
+
+        const roomInfoElement =
+            document.getElementById("room-info");
 
         const form =
             document.getElementById(
@@ -160,28 +225,87 @@
         const messageInput =
             document.getElementById("message");
 
+        const sendButton =
+            document.getElementById("send-button");
+
         const notificationsElement =
             document.getElementById(
                 "notifications"
             );
 
-        const USER_ID = "lucas";
+
+        // ========================================
+        // IDENTIDADE DO CLIENTE
+        // ========================================
+
+        /**
+         * Os dados do usuário e da sala são
+         * obtidos através dos parâmetros da URL.
+         *
+         * Exemplo:
+         *
+         * http://localhost:5500/
+         *     ?userId=lucas
+         *     &roomId=room-123
+         *
+         * userId:
+         * Identifica quem está conectado.
+         *
+         * roomId:
+         * Identifica a sala de chat.
+         */
+
+        const params =
+            new URLSearchParams(
+                window.location.search
+            );
+
+        const USER_ID =
+            params.get("userId") || "lucas";
+
+        const ROOM_ID =
+            params.get("roomId") || "room-123";
+
+
+        console.log(
+            "[Chat] Usuário:",
+            USER_ID
+        );
+
+        console.log(
+            "[Chat] Sala:",
+            ROOM_ID
+        );
+
+
+        roomInfoElement.textContent =
+            `Usuário: ${USER_ID} | Sala: ${ROOM_ID}`;
+
+
         // ========================================
         // SSE
         // ========================================
 
         /**
-         * EventSource mantém uma conexão HTTP
-         * aberta com o endpoint SSE.
+         * EventSource abre uma conexão persistente
+         * com o endpoint SSE.
          *
-         * Diferentemente de fetch comum,
-         * a conexão permanece aberta aguardando
-         * novos eventos enviados pelo servidor.
+         * Essa conexão permanece aberta para que
+         * o servidor consiga enviar eventos para
+         * o navegador em tempo real.
+         *
+         * O userId e o roomId são enviados na URL
+         * para que o backend saiba:
+         *
+         * 1. Quem está conectado.
+         * 2. Em qual sala está conectado.
          */
+
         const eventSource =
             new EventSource(
-                // `${API_URL}/events`
-                `${API_URL}/events?userId=${USER_ID}`
+                `${API_URL}/events` +
+                `?userId=${encodeURIComponent(USER_ID)}` +
+                `&roomId=${encodeURIComponent(ROOM_ID)}`
             );
 
 
@@ -200,95 +324,231 @@
 
             statusElement.className =
                 "status connected";
+
         };
 
 
         // ========================================
-        // MENSAGEM RECEBIDA
+        // EVENTO: CONNECTION
         // ========================================
 
-        eventSource.addEventListener("notification", (event) => {
+        /**
+         * O backend envia esse evento somente
+         * quando a conexão SSE é estabelecida.
+         *
+         * Formato:
+         *
+         * event: connection
+         * data: {...}
+         */
 
-            console.log(
-                "[SSE notification] Evento recebido :",
-                event.data
-            );
+        eventSource.addEventListener(
+            "connection",
+            (event) => {
 
-            try {
+                console.log(
+                    "[SSE connection] Evento recebido:",
+                    event.data
+                );
 
-                const data =
-                    JSON.parse(event.data);
-
-
-                if (
-                    data.type ===
-                    "connection"
-                ) {
-                    return;
-                }
-
-
-                const notification =
-                    document.createElement(
-                        "div"
-                    );
-
-                notification.className =
-                    "notification";
+            }
+        );
 
 
-                const title =
-                    document.createElement(
-                        "strong"
-                    );
+        // ========================================
+        // EVENTO: NOTIFICATION
+        // ========================================
 
-                title.textContent =
-                    data.message;
+        /**
+         * O backend envia mensagens utilizando
+         * o evento SSE "notification".
+         *
+         * Fluxo:
+         *
+         * Frontend
+         *     ↓
+         * POST /notify
+         *     ↓
+         * Redis Publisher
+         *     ↓
+         * Redis
+         *     ↓
+         * Redis Subscriber
+         *     ↓
+         * SSE Connection Manager
+         *     ↓
+         * EventSource
+         *     ↓
+         * Este listener
+         */
 
+        eventSource.addEventListener(
+            "notification",
+            (event) => {
 
-                const timestamp =
-                    document.createElement(
-                        "small"
-                    );
+                console.log(
+                    "[SSE notification] Evento recebido:",
+                    event.data
+                );
 
-                if (data.timestamp) {
+                try {
 
-                    timestamp.textContent =
-                        new Date(
-                            data.timestamp
-                        ).toLocaleString(
-                            "pt-BR"
+                    const data =
+                        JSON.parse(
+                            event.data
                         );
 
+
+                    // ========================================
+                    // FILTRO DE SALA
+                    // ========================================
+
+                    /**
+                     * O backend deve enviar somente
+                     * mensagens pertencentes à sala
+                     * em que o cliente está conectado.
+                     *
+                     * Essa verificação no frontend
+                     * funciona como uma segunda camada
+                     * de segurança.
+                     */
+
+                    if (
+                        data.roomId &&
+                        data.roomId !== ROOM_ID
+                    ) {
+
+                        console.warn(
+                            "[SSE] Mensagem ignorada. Sala diferente:",
+                            data.roomId
+                        );
+
+                        return;
+                    }
+
+
+                    // ========================================
+                    // CRIA ELEMENTO DA MENSAGEM
+                    // ========================================
+
+                    const notification =
+                        document.createElement(
+                            "div"
+                        );
+
+                    notification.className =
+                        "notification";
+
+
+                    const header =
+                        document.createElement(
+                            "div"
+                        );
+
+                    header.className =
+                        "notification-header";
+
+
+                    const user =
+                        document.createElement(
+                            "span"
+                        );
+
+                    user.className =
+                        "notification-user";
+
+                    user.textContent =
+                        data.userId || "Usuário";
+
+
+                    const room =
+                        document.createElement(
+                            "span"
+                        );
+
+                    room.className =
+                        "notification-room";
+
+                    room.textContent =
+                        data.roomId || "";
+
+
+                    header.appendChild(user);
+
+                    header.appendChild(room);
+
+
+                    const message =
+                        document.createElement(
+                            "p"
+                        );
+
+                    message.className =
+                        "notification-message";
+
+                    message.textContent =
+                        data.message || "";
+
+
+                    const timestamp =
+                        document.createElement(
+                            "small"
+                        );
+
+
+                    if (data.timestamp) {
+
+                        timestamp.textContent =
+                            new Date(
+                                data.timestamp
+                            ).toLocaleString(
+                                "pt-BR"
+                            );
+
+                    }
+
+
+                    notification.appendChild(
+                        header
+                    );
+
+                    notification.appendChild(
+                        message
+                    );
+
+                    notification.appendChild(
+                        timestamp
+                    );
+
+
+                    notificationsElement.prepend(
+                        notification
+                    );
+
+                } catch (error) {
+
+                    console.error(
+                        "[SSE] Erro ao processar evento:",
+                        error
+                    );
+
                 }
 
-
-                notification.appendChild(
-                    title
-                );
-
-                notification.appendChild(
-                    timestamp
-                );
-
-
-                notificationsElement.prepend(
-                    notification
-                );
-
-            } catch (error) {
-
-                console.error(
-                    "[SSE] Erro ao processar evento:",
-                    error
-                );
             }
-        });
+        );
 
 
         // ========================================
         // ERRO / RECONEXÃO
         // ========================================
+
+        /**
+         * EventSource possui reconexão automática.
+         *
+         * Caso a conexão seja perdida,
+         * o navegador tentará reconectar
+         * automaticamente.
+         */
 
         eventSource.onerror = (error) => {
 
@@ -302,12 +562,31 @@
 
             statusElement.className =
                 "status disconnected";
+
         };
 
 
         // ========================================
-        // ENVIAR NOTIFICAÇÃO
+        // ENVIAR MENSAGEM
         // ========================================
+
+        /**
+         * O SSE é utilizado somente para receber
+         * mensagens.
+         *
+         * Para enviar uma mensagem utilizamos
+         * uma requisição HTTP POST normal.
+         *
+         * Fluxo:
+         *
+         * Formulário
+         *     ↓
+         * POST /notify
+         *     ↓
+         * Express
+         *     ↓
+         * Redis Publisher
+         */
 
         form.addEventListener(
             "submit",
@@ -325,6 +604,10 @@
                 }
 
 
+                sendButton.disabled =
+                    true;
+
+
                 try {
 
                     const response =
@@ -339,6 +622,8 @@
                                 },
 
                                 body: JSON.stringify({
+                                    userId: USER_ID,
+                                    roomId: ROOM_ID,
                                     message,
                                 }),
                             }
@@ -353,13 +638,14 @@
 
                         throw new Error(
                             data.error ||
-                            "Erro ao enviar notificação."
+                            "Erro ao enviar mensagem."
                         );
+
                     }
 
 
                     console.log(
-                        "[API] Notificação publicada:",
+                        "[API] Mensagem publicada:",
                         data
                     );
 
@@ -367,7 +653,6 @@
                     messageInput.value = "";
 
                     messageInput.focus();
-
 
                 } catch (error) {
 
@@ -377,8 +662,14 @@
                     );
 
                     alert(
-                        "Não foi possível enviar a notificação."
+                        "Não foi possível enviar a mensagem."
                     );
+
+                } finally {
+
+                    sendButton.disabled =
+                        false;
+
                 }
 
             }
@@ -388,6 +679,11 @@
         // ========================================
         // ENCERRAMENTO
         // ========================================
+
+        /**
+         * Fecha explicitamente a conexão SSE
+         * quando o usuário abandona a página.
+         */
 
         window.addEventListener(
             "beforeunload",
