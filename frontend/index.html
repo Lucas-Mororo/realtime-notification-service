@@ -165,7 +165,7 @@
                 "notifications"
             );
 
-
+        const USER_ID = "lucas";
         // ========================================
         // SSE
         // ========================================
@@ -180,7 +180,8 @@
          */
         const eventSource =
             new EventSource(
-                `${API_URL}/events`
+                // `${API_URL}/events`
+                `${API_URL}/events?userId=${USER_ID}`
             );
 
 

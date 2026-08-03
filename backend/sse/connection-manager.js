@@ -22,16 +22,21 @@
  * recebidas pelo SSE.
  */
 class SSEConnectionManager {
-
     constructor() {
-
         /**
-         * Set utilizado para armazenar as
-         * respostas HTTP das conexões SSE.
+         * Armazena as conexões SSE agrupadas por usuário.
          *
-         * O Set evita clientes duplicados.
+         * Estrutura:
+         *
+         * Map<
+         *     userId,
+         *     Set<Response>
+         * >
+         *
+         * Um usuário pode possuir várias conexões
+         * simultâneas.
          */
-        this.clients = new Set();
+        this.clients = new Map();
     }
 
     // ========================================
@@ -39,17 +44,26 @@ class SSEConnectionManager {
     // ========================================
 
     /**
-     * Adiciona uma nova conexão SSE.
+     * Adiciona uma conexão SSE para um usuário.
      *
+     * Um mesmo usuário pode possuir múltiplas
+     * conexões simultâneas.
+     *
+     * @param {string} userId
      * @param {Response} client
      */
-    add(client) {
+    add(userId, client) {
+        if (!this.clients.has(userId)) {
+            this.clients.set(userId, new Set());
+        }
 
-        this.clients.add(client);
+        const userClients = this.clients.get(userId);
 
-        console.log(
-            `[SSE] Cliente adicionado. Total: ${this.clients.size}`
-        );
+        userClients.add(client);
+
+        console.log(`[SSE] Conexão adicionada para usuário ${userId}.`);
+
+        console.log(`[SSE] Conexões totais: ${this.getCount()}`);
     }
 
     // ========================================
@@ -57,17 +71,34 @@ class SSEConnectionManager {
     // ========================================
 
     /**
-     * Remove uma conexão SSE.
+     * Remove uma conexão SSE de um usuário.
      *
+     * Se o usuário não possuir mais conexões,
+     * ele também será removido do Map.
+     *
+     * @param {string} userId
      * @param {Response} client
      */
-    remove(client) {
+    remove(userId, client) {
+        const userClients = this.clients.get(userId);
 
-        this.clients.delete(client);
+        if (!userClients) {
+            return;
+        }
 
-        console.log(
-            `[SSE] Cliente removido. Total: ${this.clients.size}`
-        );
+        userClients.delete(client);
+
+        /**
+         * Se não existem mais conexões para esse
+         * usuário, removemos o usuário do Map.
+         */
+        if (userClients.size === 0) {
+            this.clients.delete(userId);
+        }
+
+        console.log(`[SSE] Conexão removida do usuário ${userId}.`);
+
+        console.log(`[SSE] Conexões totais: ${this.getCount()}`);
     }
 
     // ========================================
@@ -75,14 +106,37 @@ class SSEConnectionManager {
     // ========================================
 
     /**
-     * Retorna a quantidade atual
-     * de conexões SSE.
+     * Retorna a quantidade total de conexões SSE.
      *
      * @returns {number}
-     */
+    */
     getCount() {
 
-        return this.clients.size;
+        let count = 0;
+
+        for (const userClients of this.clients.values()) {
+            count += userClients.size;
+        }
+
+        return count;
+    }
+
+    /**
+     * Retorna a quantidade de conexões de um usuário.
+     *
+     * @param {string} userId
+     * @returns {number}
+     */
+    getUserConnectionCount(userId) {
+
+        const userClients =
+            this.clients.get(userId);
+
+        if (!userClients) {
+            return 0;
+        }
+
+        return userClients.size;
     }
 
     // ========================================
@@ -102,30 +156,59 @@ class SSEConnectionManager {
      * @param {object|string} data
      */
     send(client, event, data) {
-
         try {
+            const payload = typeof data === "string" ? data : JSON.stringify(data);
 
-            const payload =
-                typeof data === "string"
-                    ? data
-                    : JSON.stringify(data);
+            client.write(`event: ${event}\n`);
 
-            client.write(
-                `event: ${event}\n`
-            );
-
-            client.write(
-                `data: ${payload}\n\n`
-            );
-
+            client.write(`data: ${payload}\n\n`);
         } catch (error) {
-
-            console.error(
-                "[SSE] Erro ao enviar evento:",
-                error
-            );
+            console.error("[SSE] Erro ao enviar evento:", error);
 
             this.remove(client);
+        }
+    }
+
+    /**
+     * Envia um evento SSE somente para as conexões
+     * pertencentes a um determinado usuário.
+     *
+     * @param {string} userId
+     * @param {string} event
+     * @param {object|string} data
+     */
+    sendToUser(userId, event, data) {
+
+        const userClients =
+            this.clients.get(userId);
+
+        /**
+         * Usuário não possui nenhuma conexão ativa.
+         */
+        if (!userClients) {
+
+            console.log(
+                `[SSE] Usuário ${userId} não possui conexões ativas.`
+            );
+
+            return;
+        }
+
+        /**
+         * Envia o evento para todas as conexões
+         * desse usuário.
+         *
+         * Isso significa que se Lucas estiver
+         * conectado em duas abas, as duas receberão
+         * a notificação.
+         */
+        for (const client of userClients) {
+
+            this.send(
+                client,
+                event,
+                data
+            );
         }
     }
 
@@ -141,14 +224,8 @@ class SSEConnectionManager {
      * @param {object|string} data
      */
     broadcast(event, data) {
-
         for (const client of this.clients) {
-
-            this.send(
-                client,
-                event,
-                data
-            );
+            this.send(client, event, data);
         }
     }
 
@@ -170,21 +247,11 @@ class SSEConnectionManager {
      * dispara nenhum evento EventSource.
      */
     heartbeat() {
-
         for (const client of this.clients) {
-
             try {
-
-                client.write(
-                    ": heartbeat\n\n"
-                );
-
+                client.write(": heartbeat\n\n");
             } catch (error) {
-
-                console.error(
-                    "[SSE] Erro no heartbeat:",
-                    error
-                );
+                console.error("[SSE] Erro no heartbeat:", error);
 
                 this.remove(client);
             }
@@ -202,27 +269,17 @@ class SSEConnectionManager {
      * da aplicação.
      */
     closeAll() {
-
         for (const client of this.clients) {
-
             try {
-
                 client.end();
-
             } catch (error) {
-
-                console.error(
-                    "[SSE] Erro ao fechar cliente:",
-                    error
-                );
+                console.error("[SSE] Erro ao fechar cliente:", error);
             }
         }
 
         this.clients.clear();
 
-        console.log(
-            "[SSE] Todas as conexões foram encerradas."
-        );
+        console.log("[SSE] Todas as conexões foram encerradas.");
     }
 }
 
@@ -237,7 +294,6 @@ class SSEConnectionManager {
  * que importarem este arquivo utilizarão o
  * mesmo Set de conexões.
  */
-const sseConnectionManager =
-    new SSEConnectionManager();
+const sseConnectionManager = new SSEConnectionManager();
 
 module.exports = sseConnectionManager;

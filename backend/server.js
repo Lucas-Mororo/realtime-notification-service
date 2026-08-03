@@ -111,7 +111,16 @@ const heartbeatInterval = setInterval(
 
 app.get("/events", (req, res) => {
 
-    console.log("[SSE] Novo cliente conectado.");
+    const { userId } = req.query;
+
+    if (!userId) {
+
+        return res.status(400).json({
+            error: "userId é obrigatório.",
+        });
+    }
+
+    console.log(`[SSE] Novo cliente conectado. Usuário: ${userId}`);
 
     // ========================================
     // HEADERS SSE
@@ -158,7 +167,7 @@ app.get("/events", (req, res) => {
      * A partir deste momento o cliente poderá
      * receber eventos publicados no Redis.
      */
-    sseConnectionManager.add(res);
+    sseConnectionManager.add(userId, res);
 
     // ========================================
     // EVENTO: CONNECTION
@@ -206,7 +215,7 @@ app.get("/events", (req, res) => {
      */
     req.on("close", () => {
 
-        sseConnectionManager.remove(res);
+        sseConnectionManager.remove(userId, res);
 
     });
 });
@@ -219,16 +228,21 @@ app.post("/notify", async (req, res) => {
 
     try {
 
-        const { message } = req.body;
+        const { userId, message } = req.body;
 
         // ========================================
         // VALIDAÇÃO
         // ========================================
 
-        if (
-            typeof message !== "string" ||
-            !message.trim()
-        ) {
+        if (!userId) {
+
+            return res.status(400).json({
+                error: "userId é obrigatório.",
+            });
+        }
+
+        if (!message) {
+
             return res.status(400).json({
                 error: "A mensagem é obrigatória.",
             });
@@ -240,6 +254,7 @@ app.post("/notify", async (req, res) => {
 
         const notification = {
             type: "notification",
+            userId,
             message: message.trim(),
             timestamp: new Date().toISOString(),
         };
