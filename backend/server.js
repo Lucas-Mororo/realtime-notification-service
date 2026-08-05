@@ -13,8 +13,21 @@ const {
     closeSubscriber,
 } = require("./redis/subscriber");
 
+const {
+    startNotificationSubscriber,
+} = require("./redis/notification-subscriber");
+
 const sseConnectionManager =
     require("./sse/connection-manager");
+
+const notificationRoutes =
+    require("./routes/notification.routes");
+
+const sseRoutes =
+    require("./routes/sse.routes");
+
+const healthRoutes =
+    require("./routes/health.routes");
 
 // ========================================
 // CONFIGURAÇÕES
@@ -86,6 +99,10 @@ app.use(
     })
 );
 
+app.use(notificationRoutes);
+app.use(sseRoutes);
+app.use(healthRoutes);
+
 // ========================================
 // SSE HEARTBEAT
 // ========================================
@@ -114,308 +131,6 @@ const heartbeatInterval =
 
     }, SSE_HEARTBEAT_INTERVAL);
 
-// ========================================
-// SSE
-// ========================================
-
-/**
- * Endpoint responsável por estabelecer
- * uma conexão Server-Sent Events.
- *
- * Exemplo:
- *
- * GET /events?userId=lucas&roomId=room-123
- *
- * O userId identifica o usuário.
- *
- * O roomId identifica a sala em que
- * esse usuário deseja receber mensagens.
- */
-app.get("/events", (req, res) => {
-
-    const {
-        userId,
-        roomId,
-    } = req.query;
-
-    // ========================================
-    // VALIDAÇÃO
-    // ========================================
-
-    if (!userId) {
-
-        return res.status(400).json({
-            error: "userId é obrigatório.",
-        });
-    }
-
-    if (!roomId) {
-
-        return res.status(400).json({
-            error: "roomId é obrigatório.",
-        });
-    }
-
-    console.log(
-        `[SSE] Novo cliente conectado. ` +
-        `Usuário: ${userId} | Sala: ${roomId}`
-    );
-
-    // ========================================
-    // HEADERS SSE
-    // ========================================
-
-    /**
-     * Informa ao navegador que essa resposta
-     * será um fluxo Server-Sent Events.
-     */
-    res.setHeader(
-        "Content-Type",
-        "text/event-stream"
-    );
-
-    /**
-     * Impede cache da conexão.
-     */
-    res.setHeader(
-        "Cache-Control",
-        "no-cache"
-    );
-
-    /**
-     * Mantém a conexão HTTP aberta.
-     */
-    res.setHeader(
-        "Connection",
-        "keep-alive"
-    );
-
-    /**
-     * Envia os headers imediatamente.
-     */
-    res.flushHeaders();
-
-    // ========================================
-    // REGISTRA CONEXÃO
-    // ========================================
-
-    /**
-     * Registra a conexão no Connection Manager.
-     *
-     * O Manager será responsável por associar:
-     *
-     * userId
-     *     ↓
-     * roomId
-     *     ↓
-     * res
-     *
-     * Dessa forma podemos descobrir posteriormente
-     * quais clientes pertencem a determinada sala.
-     */
-    sseConnectionManager.add(
-        userId,
-        roomId,
-        res
-    );
-
-    // ========================================
-    // EVENTO DE CONEXÃO
-    // ========================================
-
-    /**
-     * Envia um evento informando ao frontend
-     * que a conexão foi estabelecida.
-     */
-    sseConnectionManager.send(
-        res,
-        "connection",
-        {
-            type: "connection",
-            message: "Conectado ao servidor SSE",
-            userId,
-            roomId,
-        }
-    );
-
-    // ========================================
-    // ENCERRAMENTO
-    // ========================================
-
-    /**
-     * Quando o navegador fecha a conexão,
-     * removemos o cliente do Connection Manager.
-     */
-    req.on("close", () => {
-
-        console.log(
-            `[SSE] Cliente desconectado. ` +
-            `Usuário: ${userId} | Sala: ${roomId}`
-        );
-
-        sseConnectionManager.remove(res);
-    });
-});
-
-// ========================================
-// NOTIFICAÇÃO
-// ========================================
-
-/**
- * Publica uma mensagem no Redis.
- *
- * O Redis não envia diretamente para os navegadores.
- *
- * O fluxo é:
- *
- * HTTP POST
- *    ↓
- * Express
- *    ↓
- * Redis Publisher
- *    ↓
- * Redis Pub/Sub
- *    ↓
- * Redis Subscriber
- *    ↓
- * SSE Connection Manager
- *    ↓
- * Navegadores da sala
- */
-app.post("/notify", async (req, res) => {
-
-    try {
-
-        const {
-            userId,
-            roomId,
-            message,
-        } = req.body;
-
-        // ========================================
-        // VALIDAÇÃO
-        // ========================================
-
-        if (!userId) {
-
-            return res.status(400).json({
-                error: "userId é obrigatório.",
-            });
-        }
-
-        if (!roomId) {
-
-            return res.status(400).json({
-                error: "roomId é obrigatório.",
-            });
-        }
-
-        if (
-            typeof message !== "string" ||
-            !message.trim()
-        ) {
-
-            return res.status(400).json({
-                error: "A mensagem é obrigatória.",
-            });
-        }
-
-        // ========================================
-        // PAYLOAD
-        // ========================================
-
-        const notification = {
-            type: "message",
-            roomId,
-            userId,
-            message: message.trim(),
-            timestamp:
-                new Date().toISOString(),
-        };
-
-        // ========================================
-        // REDIS PUBLISHER
-        // ========================================
-
-        /**
-         * Obtém o Publisher Singleton.
-         *
-         * Se ainda não existir, getPublisher()
-         * cria e conecta a instância.
-         *
-         * Se já existir, a mesma conexão é reutilizada.
-         */
-        const publisher =
-            await getPublisher();
-
-        /**
-         * Publica a mensagem no canal Redis.
-         */
-        await publisher.publish(
-            CHANNEL,
-            JSON.stringify(notification)
-        );
-
-        console.log(
-            "[Redis Publisher] Mensagem publicada:",
-            notification
-        );
-
-        return res.json({
-            success: true,
-            message: "Mensagem publicada.",
-        });
-
-    } catch (error) {
-
-        console.error(
-            "[POST /notify] Erro:",
-            error
-        );
-
-        return res.status(500).json({
-            error: "Erro interno do servidor.",
-        });
-    }
-});
-
-// ========================================
-// HEALTH CHECK
-// ========================================
-
-/**
- * Endpoint utilizado para verificar
- * o estado básico da aplicação.
- */
-app.get("/health", (req, res) => {
-
-    const publisher =
-        getPublisherInstance();
-
-    const subscriber =
-        getSubscriberInstance();
-
-    return res.json({
-        status: "ok",
-
-        clients:
-            sseConnectionManager.getCount(),
-
-        channel: CHANNEL,
-
-        redis: {
-            publisher:
-                Boolean(
-                    publisher?.isOpen
-                ),
-
-            subscriber:
-                Boolean(
-                    subscriber?.isOpen
-                ),
-        },
-    });
-});
 
 // ========================================
 // INICIALIZAÇÃO
@@ -433,84 +148,7 @@ async function startServer() {
         // REDIS SUBSCRIBER
         // ========================================
 
-        /**
-         * O Subscriber precisa estar conectado
-         * antes de receber mensagens.
-         */
-        const subscriber =
-            await getSubscriber();
-
-        // ========================================
-        // REDIS SUBSCRIBE
-        // ========================================
-
-        /**
-         * Inscreve o Subscriber no canal.
-         *
-         * Toda mensagem publicada nesse canal
-         * será recebida pelo callback.
-         */
-        subscriber.subscribe(
-            CHANNEL,
-            (message) => {
-
-                console.log(
-                    "[Redis Subscriber] Mensagem recebida:",
-                    message
-                );
-
-                try {
-                    /**
-                     * Redis Pub/Sub entrega a mensagem
-                     * como string.
-                     *
-                     * Precisamos convertê-la novamente
-                     * para o objeto original.
-                     */
-                    const notification =
-                        JSON.parse(message);
-
-                    /**
-                     * O roomId determina quais conexões
-                     * devem receber a mensagem.
-                     */
-                    if (!notification.roomId) {
-                        console.warn(
-                            "[Redis Subscriber] Mensagem ignorada: roomId ausente."
-                        );
-
-                        return;
-                    }
-
-                    /**
-                     * Redis → SSE Connection Manager
-                     *
-                     * roomId
-                     *     ↓
-                     * sala correta
-                     *     ↓
-                     * conexões da sala
-                     *     ↓
-                     * clientes SSE
-                     */
-                    sseConnectionManager.broadcast(
-                        notification.roomId,
-                        "notification",
-                        notification
-                    );
-
-                } catch (error) {
-                    console.error(
-                        "[Redis Subscriber] Erro ao processar mensagem:",
-                        error
-                    );
-                }
-            }
-        );
-
-        console.log(
-            `[Redis Subscriber] Inscrito no canal: ${CHANNEL}`
-        );
+        await startNotificationSubscriber();
 
         // ========================================
         // SERVER
