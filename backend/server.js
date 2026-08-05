@@ -253,11 +253,7 @@ app.get("/events", (req, res) => {
             `Usuário: ${userId} | Sala: ${roomId}`
         );
 
-        sseConnectionManager.remove(
-            userId,
-            roomId,
-            res
-        );
+        sseConnectionManager.remove(res);
     });
 });
 
@@ -454,7 +450,7 @@ async function startServer() {
          * Toda mensagem publicada nesse canal
          * será recebida pelo callback.
          */
-        await subscriber.subscribe(
+        subscriber.subscribe(
             CHANNEL,
             (message) => {
 
@@ -463,22 +459,52 @@ async function startServer() {
                     message
                 );
 
-                // ========================================
-                // REDIS → SSE
-                // ========================================
+                try {
+                    /**
+                     * Redis Pub/Sub entrega a mensagem
+                     * como string.
+                     *
+                     * Precisamos convertê-la novamente
+                     * para o objeto original.
+                     */
+                    const notification =
+                        JSON.parse(message);
 
-                /**
-                 * Encaminha a mensagem para o
-                 * Connection Manager.
-                 *
-                 * O Connection Manager é responsável
-                 * por decidir quais clientes devem
-                 * receber a mensagem com base no roomId.
-                 */
-                sseConnectionManager.broadcast(
-                    "notification",
-                    message
-                );
+                    /**
+                     * O roomId determina quais conexões
+                     * devem receber a mensagem.
+                     */
+                    if (!notification.roomId) {
+                        console.warn(
+                            "[Redis Subscriber] Mensagem ignorada: roomId ausente."
+                        );
+
+                        return;
+                    }
+
+                    /**
+                     * Redis → SSE Connection Manager
+                     *
+                     * roomId
+                     *     ↓
+                     * sala correta
+                     *     ↓
+                     * conexões da sala
+                     *     ↓
+                     * clientes SSE
+                     */
+                    sseConnectionManager.broadcast(
+                        notification.roomId,
+                        "notification",
+                        notification
+                    );
+
+                } catch (error) {
+                    console.error(
+                        "[Redis Subscriber] Erro ao processar mensagem:",
+                        error
+                    );
+                }
             }
         );
 

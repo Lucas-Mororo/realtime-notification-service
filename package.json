@@ -4,10 +4,11 @@
     "description": "Real-time notification service built with Node.js, Express, Server-Sent Events and Redis Pub/Sub",
     "main": "backend/server.js",
     "scripts": {
-        "start": "node backend/server.js",
+        "start": "docker compose up -d --wait redis && node backend/server.js",
         "dev": "docker compose -f docker-compose.dev.yml up --build",
         "dev:down": "docker compose -f docker-compose.dev.yml down",
         "dev:logs": "docker compose -f docker-compose.dev.yml logs -f",
+        "dev:redis": "docker compose -f docker-compose.dev.yml up redis -d",
         "prod": "docker compose up --build -d",
         "prod:down": "docker compose down",
         "prod:logs": "docker compose logs -f"

@@ -1,19 +1,20 @@
 // ========================================
 // SSE CONNECTION MANAGER
 // ========================================
-
 /**
  * Gerencia todas as conexões SSE abertas
  * pela aplicação.
  *
  * Responsabilidades:
  *
- * - adicionar clientes;
- * - remover clientes;
+ * - adicionar conexões;
+ * - remover conexões;
  * - enviar eventos para um cliente;
- * - enviar eventos para todos os clientes;
+ * - enviar eventos para um usuário;
+ * - enviar eventos para uma sala;
  * - enviar heartbeat;
- * - informar quantidade de conexões.
+ * - informar quantidade de conexões;
+ * - encerrar todas as conexões.
  *
  * A classe não conhece Express, Redis ou
  * regras de negócio.
@@ -23,117 +24,176 @@
  */
 class SSEConnectionManager {
     constructor() {
-
         /**
-         * Armazena as conexões SSE agrupadas por usuário.
+         * Fonte de verdade das conexões SSE.
+         *
+         * Cada ServerResponse é associado aos
+         * metadados da conexão.
          *
          * Estrutura:
          *
          * Map<
-         *   userId,
-         *   Set<ServerResponse>
+         *     ServerResponse,
+         *     {
+         *         userId: string,
+         *         roomId: string
+         *     }
          * >
          *
          * Exemplo:
          *
-         * {
-         *     "lucas" -> Set(res1, res2),
-         *     "pedro" -> Set(res3)
+         * res1 -> {
+         *     userId: "lucas",
+         *     roomId: "room-123"
+         * }
+         *
+         * res2 -> {
+         *     userId: "pedro",
+         *     roomId: "room-123"
          * }
          */
         this.connections = new Map();
 
         /**
-         * Armazena os usuários pertencentes
-         * a cada sala.
+         * Índice das conexões agrupadas por sala.
+         *
+         * Essa estrutura existe para tornar o
+         * broadcast por sala direto.
          *
          * Estrutura:
          *
          * Map<
-         *   roomId,
-         *   Set<userId>
+         *     roomId,
+         *     Set<ServerResponse>
          * >
+         *
+         * Exemplo:
+         *
+         * room-123 -> Set(res1, res2)
+         * room-999 -> Set(res3)
          */
         this.rooms = new Map();
     }
 
     // ========================================
-    // ADD CLIENT
+    // ADD CONNECTION
     // ========================================
-
     /**
-     * Adiciona uma conexão SSE para um usuário.
+     * Adiciona uma conexão SSE.
+     *
+     * A própria operação add() registra:
+     *
+     * userId
+     *     ↓
+     * roomId
+     *     ↓
+     * res
+     *
+     * Não é necessário chamar joinRoom()
+     * separadamente.
      *
      * Um mesmo usuário pode possuir múltiplas
      * conexões simultâneas.
      *
      * @param {string} userId
+     * @param {string} roomId
      * @param {Response} client
      */
     add(userId, roomId, client) {
-
-        if (!this.connections.has(userId)) {
-
-            this.connections.set(
-                userId,
-                new Set()
+        if (
+            !userId ||
+            !roomId ||
+            !client
+        ) {
+            console.error(
+                "[SSE] Não foi possível adicionar conexão inválida."
             );
+
+            return;
         }
 
-        this.connections.get(userId).add(client);
+        /**
+         * Registra a conexão e seus metadados.
+         */
+        this.connections.set(client, {
+            userId,
+            roomId,
+        });
 
+        /**
+         * Cria o Set da sala caso ainda não exista.
+         */
         if (!this.rooms.has(roomId)) {
-
             this.rooms.set(
                 roomId,
                 new Set()
             );
         }
 
-        this.rooms.get(roomId).add(userId);
+        /**
+         * Adiciona a conexão ao índice da sala.
+         */
+        this.rooms
+            .get(roomId)
+            .add(client);
 
         console.log(
             `[SSE] Usuário ${userId} entrou na sala ${roomId}.`
         );
 
         console.log(
-            `[SSE] Usuários na sala ${roomId}:`,
+            `[SSE] Conexões na sala ${roomId}:`,
             this.rooms.get(roomId).size
         );
     }
 
     // ========================================
-    // REMOVE CLIENT
+    // REMOVE CONNECTION
     // ========================================
-
     /**
-     * Remove uma conexão SSE de um usuário.
+     * Remove uma conexão SSE.
      *
-     * Se o usuário não possuir mais conexões,
-     * ele também será removido do Map.
+     * A conexão é removida:
+     *
+     * 1. Do Map principal de conexões.
+     * 2. Do Set da sala.
+     *
+     * Se a sala ficar vazia, ela também será
+     * removida.
      *
      * @param {Response} client
      */
-    remove(userId, roomId, client) {
+    remove(client) {
+        const connection =
+            this.connections.get(client);
 
-        const userConnections =
-            this.connections.get(userId);
-
-        if (userConnections) {
-            userConnections.delete(client);
-
-            if (userConnections.size === 0) {
-                this.connections.delete(userId);
-            }
+        if (!connection) {
+            return;
         }
 
-        const roomUsers =
+        const {
+            userId,
+            roomId,
+        } = connection;
+
+        /**
+         * Remove a conexão da fonte de verdade.
+         */
+        this.connections.delete(client);
+
+        /**
+         * Remove a conexão do índice da sala.
+         */
+        const roomClients =
             this.rooms.get(roomId);
 
-        if (roomUsers) {
-            roomUsers.delete(userId);
+        if (roomClients) {
+            roomClients.delete(client);
 
-            if (roomUsers.size === 0) {
+            /**
+             * Não mantemos salas vazias em memória.
+             */
+            if (roomClients.size === 0) {
                 this.rooms.delete(roomId);
             }
         }
@@ -146,45 +206,39 @@ class SSEConnectionManager {
     // ========================================
     // COUNT
     // ========================================
-
     /**
      * Retorna a quantidade total de conexões SSE.
      *
      * @returns {number}
-    */
+     */
     getCount() {
-
-        let count = 0;
-
-        for (const userClients of this.connections.values()) {
-            count += userClients.size;
-        }
-
-        return count;
+        return this.connections.size;
     }
 
     /**
      * Retorna a quantidade de conexões de um usuário.
      *
+     * Como um usuário pode possuir múltiplas abas,
+     * precisamos percorrer as conexões.
+     *
      * @param {string} userId
      * @returns {number}
      */
     getUserConnectionCount(userId) {
+        let count = 0;
 
-        const userClients =
-            this.connections.get(userId);
-
-        if (!userClients) {
-            return 0;
+        for (const connection of this.connections.values()) {
+            if (connection.userId === userId) {
+                count++;
+            }
         }
 
-        return userClients.size;
+        return count;
     }
 
     // ========================================
     // SEND
     // ========================================
-
     /**
      * Envia um evento SSE para um único cliente.
      *
@@ -198,16 +252,24 @@ class SSEConnectionManager {
      * @param {object|string} data
      */
     send(client, event, data) {
-
         try {
-
-            if (!client || typeof client.write !== "function") {
-
+            if (
+                !client ||
+                typeof client.write !== "function"
+            ) {
                 console.error(
-                    "[SSE] Cliente inválido:",
-                    client
+                    "[SSE] Cliente inválido."
                 );
 
+                return;
+            }
+
+            /**
+             * Evita escrever em uma conexão
+             * que já foi encerrada.
+             */
+            if (client.writableEnded) {
+                this.remove(client);
                 return;
             }
 
@@ -216,54 +278,50 @@ class SSEConnectionManager {
                     ? data
                     : JSON.stringify(data);
 
-            client.write(`event: ${event}\n`);
-            client.write(`data: ${payload}\n\n`);
+            client.write(
+                `event: ${event}\n`
+            );
+
+            client.write(
+                `data: ${payload}\n\n`
+            );
 
         } catch (error) {
-
             console.error(
                 "[SSE] Erro ao enviar evento:",
                 error
             );
 
+            /**
+             * Agora remove() recebe somente o client.
+             *
+             * O Manager consegue descobrir
+             * userId e roomId através de connections.
+             */
             this.remove(client);
         }
     }
 
+    // ========================================
+    // SEND TO USER
+    // ========================================
     /**
-     * Envia um evento SSE somente para as conexões
-     * pertencentes a um determinado usuário.
+     * Envia um evento SSE para todas as conexões
+     * pertencentes a determinado usuário.
      *
      * @param {string} userId
      * @param {string} event
      * @param {object|string} data
      */
     sendToUser(userId, event, data) {
+        for (const [
+            client,
+            connection,
+        ] of this.connections.entries()) {
 
-        const userClients =
-            this.connections.get(userId);
-
-        /**
-         * Usuário não possui nenhuma conexão ativa.
-         */
-        if (!userClients) {
-
-            console.log(
-                `[SSE] Usuário ${userId} não possui conexões ativas.`
-            );
-
-            return;
-        }
-
-        /**
-         * Envia o evento para todas as conexões
-         * desse usuário.
-         *
-         * Isso significa que se Lucas estiver
-         * conectado em duas abas, as duas receberão
-         * a notificação.
-         */
-        for (const client of userClients) {
+            if (connection.userId !== userId) {
+                continue;
+            }
 
             this.send(
                 client,
@@ -276,124 +334,64 @@ class SSEConnectionManager {
     // ========================================
     // BROADCAST
     // ========================================
-
     /**
-     * Envia um evento para todos os clientes
-     * SSE atualmente conectados.
+     * Envia um evento somente para as conexões
+     * pertencentes a determinada sala.
      *
+     * O ponto importante aqui é que o broadcast
+     * trabalha diretamente com:
+     *
+     * roomId -> Set<ServerResponse>
+     *
+     * Portanto não precisamos fazer:
+     *
+     * roomId
+     *    ↓
+     * userId
+     *    ↓
+     * connections
+     *
+     * Isso evita enviar mensagens para outras
+     * conexões do mesmo usuário que estejam
+     * em outra sala.
+     *
+     * @param {string} roomId
      * @param {string} event
      * @param {object|string} data
      */
     broadcast(roomId, event, data) {
-        const users =
-            this.rooms.get(roomId);
-
-        if (!users) {
-            return;
-        }
-
-        for (const userId of users) {
-            const clients =
-                this.connections.get(userId);
-
-            if (!clients) {
-                continue;
-            }
-
-            for (const client of clients) {
-                this.send(client, event, data);
-            }
-        }
-    }
-
-    // ========================================
-    // ROOMS
-    // ========================================
-
-    /**
-     * Adiciona um usuário a uma sala.
-     *
-     * @param {string} roomId
-     * @param {string} userId
-     */
-    joinRoom(roomId, userId) {
-
-        if (!this.rooms.has(roomId)) {
-            this.rooms.set(
-                roomId,
-                new Set()
+        if (!roomId) {
+            console.warn(
+                "[SSE] Broadcast ignorado: roomId ausente."
             );
-        }
 
-        const roomUsers =
-            this.rooms.get(roomId);
-
-        roomUsers.add(userId);
-
-        console.log(
-            `[SSE] Usuário ${userId} entrou na sala ${roomId}.`
-        );
-
-        console.log(
-            `[SSE] Usuários na sala: ${roomUsers.size}`
-        );
-    }
-
-    /**
-     * Remove um usuário de uma sala.
-     *
-     * Se a sala ficar vazia, ela também será
-     * removida do Map.
-     *
-     * @param {string} roomId
-     * @param {string} userId
-     */
-    leaveRoom(roomId, userId) {
-
-        const roomUsers =
-            this.rooms.get(roomId);
-
-        if (!roomUsers) {
             return;
         }
 
-        roomUsers.delete(userId);
-
-        if (roomUsers.size === 0) {
-            this.rooms.delete(roomId);
-        }
-
-        console.log(
-            `[SSE] Usuário ${userId} saiu da sala ${roomId}.`
-        );
-    }
-
-    /**
-     * Envia um evento para todos os usuários
-     * conectados a uma determinada sala.
-     *
-     * @param {string} roomId
-     * @param {string} event
-     * @param {object|string} data
-     */
-    broadcastToRoom(roomId, event, data) {
-
-        const roomUsers =
+        const roomClients =
             this.rooms.get(roomId);
 
-        if (!roomUsers) {
-
+        if (!roomClients) {
             console.log(
-                `[SSE] Sala ${roomId} não possui usuários conectados.`
+                `[SSE] Nenhuma conexão ativa na sala ${roomId}.`
             );
 
             return;
         }
 
-        for (const userId of roomUsers) {
+        console.log(
+            `[SSE] Broadcast para sala ${roomId}. ` +
+            `Conexões: ${roomClients.size}`
+        );
 
-            this.sendToUser(
-                userId,
+        /**
+         * O Set contém diretamente ServerResponse.
+         *
+         * Portanto cada client possui .write().
+         */
+        for (const client of roomClients) {
+            this.send(
+                client,
                 event,
                 data
             );
@@ -403,7 +401,6 @@ class SSEConnectionManager {
     // ========================================
     // HEARTBEAT
     // ========================================
-
     /**
      * Envia um comentário SSE para todas
      * as conexões abertas.
@@ -418,23 +415,31 @@ class SSEConnectionManager {
      * dispara nenhum evento EventSource.
      */
     heartbeat() {
-        for (const clients of this.connections.values()) {
-
-            for (const client of clients) {
-
-                try {
-
-                    client.write(": heartbeat\n\n");
-
-                } catch (error) {
-
-                    console.error(
-                        "[SSE] Erro no heartbeat:",
-                        error
-                    );
-
+        /**
+         * connections possui ServerResponse
+         * diretamente como chave.
+         *
+         * Portanto não precisamos percorrer
+         * Maps/Sets aninhados.
+         */
+        for (const client of this.connections.keys()) {
+            try {
+                if (client.writableEnded) {
                     this.remove(client);
+                    continue;
                 }
+
+                client.write(
+                    ": heartbeat\n\n"
+                );
+
+            } catch (error) {
+                console.error(
+                    "[SSE] Erro no heartbeat:",
+                    error
+                );
+
+                this.remove(client);
             }
         }
     }
@@ -442,7 +447,6 @@ class SSEConnectionManager {
     // ========================================
     // CLOSE ALL
     // ========================================
-
     /**
      * Encerra todas as conexões SSE.
      *
@@ -450,27 +454,28 @@ class SSEConnectionManager {
      * da aplicação.
      */
     closeAll() {
-
-        for (const clients of this.connections.values()) {
-
-            for (const client of clients) {
-
-                try {
-
+        /**
+         * connections possui os ServerResponse
+         * diretamente como chave.
+         */
+        for (const client of this.connections.keys()) {
+            try {
+                if (!client.writableEnded) {
                     client.end();
-
-                } catch (error) {
-
-                    console.error(
-                        "[SSE] Erro ao fechar cliente:",
-                        error
-                    );
                 }
+
+            } catch (error) {
+                console.error(
+                    "[SSE] Erro ao fechar cliente:",
+                    error
+                );
             }
         }
 
+        /**
+         * Limpa todos os índices em memória.
+         */
         this.connections.clear();
-
         this.rooms.clear();
 
         console.log(
@@ -488,8 +493,10 @@ class SSEConnectionManager {
  *
  * Dessa maneira, todos os módulos da aplicação
  * que importarem este arquivo utilizarão o
- * mesmo Set de conexões.
+ * mesmo Map de conexões.
  */
-const sseConnectionManager = new SSEConnectionManager();
+const sseConnectionManager =
+    new SSEConnectionManager();
 
-module.exports = sseConnectionManager;
+module.exports =
+    sseConnectionManager;

@@ -1,23 +1,6 @@
 services:
 
   # ========================================
-  # FRONTEND
-  # ========================================
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-
-    container_name: sse-frontend-dev
-
-    ports:
-      - "5500:80"
-
-    restart: unless-stopped
-
-
-  # ========================================
   # BACKEND
   # ========================================
 
@@ -41,8 +24,10 @@ services:
 
     environment:
       NODE_ENV: development
+      PORT: 3000
       REDIS_URL: redis://redis:6379
       CHOKIDAR_USEPOLLING: "true"
+      REDIS_CHANNEL: notifications
 
     depends_on:
       - redis
@@ -63,3 +48,7 @@ services:
       - "6379:6379"
 
     restart: unless-stopped
+
+
+
+
