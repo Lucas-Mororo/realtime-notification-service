@@ -1,0 +1,132 @@
+{
+  "messages": [
+    {
+      "id": 1,
+      "type": "message",
+      "roomId": "room-123",
+      "userId": "lucas",
+      "message": "asdasd",
+      "timestamp": "2026-08-06T01:55:29.771Z"
+    },
+    {
+      "id": 2,
+      "type": "message",
+      "roomId": "room-123",
+      "userId": "lucas",
+      "message": "aaaaaaaaaaaaa",
+      "timestamp": "2026-08-06T01:55:45.102Z"
+    },
+    {
+      "id": 3,
+      "type": "message",
+      "roomId": "room-123",
+      "userId": "lucas",
+      "message": "sdasd",
+      "timestamp": "2026-08-06T01:55:58.536Z"
+    },
+    {
+      "id": 4,
+      "type": "message",
+      "roomId": "room-123",
+      "userId": "user-1785981960594",
+      "message": "oi",
+      "timestamp": "2026-08-06T02:06:28.772Z"
+    },
+    {
+      "id": 5,
+      "type": "message",
+      "roomId": "room-123",
+      "userId": "user-1785981960594",
+      "message": "asdasd",
+      "timestamp": "2026-08-06T02:06:41.472Z"
+    },
+    {
+      "id": 6,
+      "type": "message",
+      "roomId": "room-123",
+      "userId": "user-1785981960594",
+      "message": "asdasd",
+      "timestamp": "2026-08-06T02:07:00.320Z"
+    },
+    {
+      "id": 7,
+      "type": "message",
+      "roomId": "room-a-1785982399360",
+      "userId": "user-1785982399297",
+      "message": "isolamento A",
+      "timestamp": "2026-08-06T02:13:19.388Z"
+    },
+    {
+      "id": 8,
+      "type": "message",
+      "roomId": "room-b-1785982399360",
+      "userId": "user-1785982399297",
+      "message": "isolamento B",
+      "timestamp": "2026-08-06T02:13:19.404Z"
+    },
+    {
+      "id": 9,
+      "type": "message",
+      "roomId": "room-pagination-1785982399436",
+      "userId": "user-1785982399297",
+      "message": "msg 1",
+      "timestamp": "2026-08-06T02:13:19.466Z"
+    },
+    {
+      "id": 10,
+      "type": "message",
+      "roomId": "room-pagination-1785982399436",
+      "userId": "user-1785982399297",
+      "message": "msg 2",
+      "timestamp": "2026-08-06T02:13:19.483Z"
+    },
+    {
+      "id": 11,
+      "type": "message",
+      "roomId": "room-pagination-1785982399436",
+      "userId": "user-1785982399297",
+      "message": "msg 3",
+      "timestamp": "2026-08-06T02:13:19.489Z"
+    },
+    {
+      "id": 12,
+      "type": "message",
+      "roomId": "room-pagination-1785982399436",
+      "userId": "user-1785982399297",
+      "message": "msg 4",
+      "timestamp": "2026-08-06T02:13:19.498Z"
+    },
+    {
+      "id": 13,
+      "type": "message",
+      "roomId": "room-pagination-1785982399436",
+      "userId": "user-1785982399297",
+      "message": "msg 5",
+      "timestamp": "2026-08-06T02:13:19.513Z"
+    },
+    {
+      "id": 14,
+      "type": "message",
+      "roomId": "room-123",
+      "userId": "user-1785982411943",
+      "message": "teste log total",
+      "timestamp": "2026-08-06T02:13:31.989Z"
+    },
+    {
+      "id": 15,
+      "type": "message",
+      "roomId": "room-123",
+      "userId": "user-1785981960594",
+      "message": "ola",
+      "timestamp": "2026-08-06T02:15:12.965Z"
+    },
+    {
+      "id": 16,
+      "type": "message",
+      "roomId": "room-123",
+      "userId": "user-1785981960594",
+      "message": "as",
+      "timestamp": "2026-08-06T02:15:27.022Z"
+    }
+  ]
+}

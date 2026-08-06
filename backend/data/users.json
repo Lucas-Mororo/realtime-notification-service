@@ -1,0 +1,74 @@
+{
+  "users": [
+    {
+      "userId": "user-1785981728783",
+      "name": "Teste",
+      "email": "user-1785981728782@example.com",
+      "passwordHash": "e8d3af75ae4bc94a8632b75fa79d56e600e9efce2b4f1dcdecd4713d29400a47",
+      "createdAt": "2026-08-06T02:02:08.783Z"
+    },
+    {
+      "userId": "user-1785981728788",
+      "name": "Teste",
+      "email": "user-1785981728789@example.com",
+      "passwordHash": "e8d3af75ae4bc94a8632b75fa79d56e600e9efce2b4f1dcdecd4713d29400a47",
+      "createdAt": "2026-08-06T02:02:08.788Z"
+    },
+    {
+      "userId": "user-1785981809029",
+      "name": "Teste",
+      "email": "user-1785981809028@example.com",
+      "passwordHash": "e8d3af75ae4bc94a8632b75fa79d56e600e9efce2b4f1dcdecd4713d29400a47",
+      "createdAt": "2026-08-06T02:03:29.029Z"
+    },
+    {
+      "userId": "user-1785981809033",
+      "name": "Teste",
+      "email": "user-1785981809034@example.com",
+      "passwordHash": "e8d3af75ae4bc94a8632b75fa79d56e600e9efce2b4f1dcdecd4713d29400a47",
+      "createdAt": "2026-08-06T02:03:29.033Z"
+    },
+    {
+      "userId": "user-1785981960594",
+      "name": "Lucas",
+      "email": "lucasmmororo@gmail.com",
+      "passwordHash": "96cae35ce8a9b0244178bf28e4966c2ce1b8385723a96a6b838858cdd6ca0a1e",
+      "createdAt": "2026-08-06T02:06:00.594Z"
+    },
+    {
+      "userId": "user-1785982354961",
+      "name": "Validacao",
+      "email": "validate-1785982354827@example.com",
+      "passwordHash": "e8d3af75ae4bc94a8632b75fa79d56e600e9efce2b4f1dcdecd4713d29400a47",
+      "createdAt": "2026-08-06T02:12:34.961Z"
+    },
+    {
+      "userId": "user-1785982399297",
+      "name": "Checklist Fase 3",
+      "email": "fase3-checklist-1785982399209@example.com",
+      "passwordHash": "e8d3af75ae4bc94a8632b75fa79d56e600e9efce2b4f1dcdecd4713d29400a47",
+      "createdAt": "2026-08-06T02:13:19.297Z"
+    },
+    {
+      "userId": "user-1785982406632",
+      "name": "Teste",
+      "email": "user-1785982406631@example.com",
+      "passwordHash": "e8d3af75ae4bc94a8632b75fa79d56e600e9efce2b4f1dcdecd4713d29400a47",
+      "createdAt": "2026-08-06T02:13:26.632Z"
+    },
+    {
+      "userId": "user-1785982406636",
+      "name": "Teste",
+      "email": "user-1785982406637@example.com",
+      "passwordHash": "e8d3af75ae4bc94a8632b75fa79d56e600e9efce2b4f1dcdecd4713d29400a47",
+      "createdAt": "2026-08-06T02:13:26.636Z"
+    },
+    {
+      "userId": "user-1785982411943",
+      "name": "Save Log",
+      "email": "save-log-1785982411877@example.com",
+      "passwordHash": "e8d3af75ae4bc94a8632b75fa79d56e600e9efce2b4f1dcdecd4713d29400a47",
+      "createdAt": "2026-08-06T02:13:31.943Z"
+    }
+  ]
+}

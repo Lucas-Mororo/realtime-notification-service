@@ -1,0 +1,29 @@
+{
+  "rooms": [
+    {
+      "roomId": "room-123",
+      "name": "Sala 123",
+      "createdAt": "2026-08-06T01:48:30.087Z"
+    },
+    {
+      "roomId": "room-empty-1785982399332",
+      "name": "Sala vazia",
+      "createdAt": "2026-08-06T02:13:19.344Z"
+    },
+    {
+      "roomId": "room-a-1785982399360",
+      "name": "room-a-1785982399360",
+      "createdAt": "2026-08-06T02:13:19.374Z"
+    },
+    {
+      "roomId": "room-b-1785982399360",
+      "name": "room-b-1785982399360",
+      "createdAt": "2026-08-06T02:13:19.381Z"
+    },
+    {
+      "roomId": "room-pagination-1785982399436",
+      "name": "Paginação",
+      "createdAt": "2026-08-06T02:13:19.451Z"
+    }
+  ]
+}

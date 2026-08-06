@@ -123,14 +123,41 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            height: 500px;
+            overflow-y: auto;
+            padding: 10px;
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e4e4e7;
         }
 
-        .notifications {
-            height: 500px;
+        .auth-card,
+        .chat-card {
+            background: white;
+            border: 1px solid #e4e4e7;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
 
-            overflow-y: auto;
+        .auth-grid {
+            display: grid;
+            gap: 12px;
+        }
 
-            padding: 10px;
+        .auth-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .secondary {
+            background: #f4f4f5;
+            color: #18181b;
+        }
+
+        .hidden {
+            display: none;
         }
 
         .notification {
@@ -198,26 +225,36 @@
             Server-Sent Events + Express + Redis Pub/Sub
         </p>
 
-        <div id="room-info" class="room-info">
-            Carregando informações da sala...
-        </div>
+        <section id="auth-card" class="auth-card">
+            <h2>Autenticação</h2>
+            <div class="auth-grid">
+                <input id="auth-name" type="text" placeholder="Nome" autocomplete="name">
+                <input id="auth-email" type="email" placeholder="E-mail" autocomplete="email" required>
+                <input id="auth-password" type="password" placeholder="Senha" autocomplete="current-password" required>
+                <div class="auth-actions">
+                    <button id="register-button" type="button">Cadastrar</button>
+                    <button id="login-button" type="button" class="secondary">Entrar</button>
+                </div>
+            </div>
+        </section>
 
-        <div id="status" class="status">
-            Conectando ao servidor...
-        </div>
+        <section id="chat-card" class="chat-card hidden">
+            <div id="room-info" class="room-info">
+                Carregando informações da sala...
+            </div>
 
-        <form id="notification-form">
+            <div id="status" class="status">
+                Conectando ao servidor...
+            </div>
 
-            <input id="message" type="text" placeholder="Digite uma mensagem..." autocomplete="off" maxlength="500"
-                required>
+            <form id="notification-form">
+                <input id="message" type="text" placeholder="Digite uma mensagem..." autocomplete="off" maxlength="500"
+                    required>
+                <button id="send-button" type="submit">Enviar</button>
+            </form>
 
-            <button id="send-button" type="submit">
-                Enviar
-            </button>
-
-        </form>
-
-        <div id="notifications" class="notifications"></div>
+            <div id="notifications" class="notifications"></div>
+        </section>
 
     </main>
 
@@ -257,473 +294,258 @@
                 "notifications"
             );
 
+        const authCardElement =
+            document.getElementById("auth-card");
 
-        // ========================================
-        // IDENTIDADE DO CLIENTE
-        // ========================================
+        const chatCardElement =
+            document.getElementById("chat-card");
 
-        /**
-         * Os dados do usuário e da sala são
-         * obtidos através dos parâmetros da URL.
-         *
-         * Exemplo:
-         *
-         * http://localhost:5500/
-         *     ?userId=lucas
-         *     &roomId=room-123
-         *
-         * userId:
-         * Identifica quem está conectado.
-         *
-         * roomId:
-         * Identifica a sala de chat.
-         */
+        const authNameInput =
+            document.getElementById("auth-name");
 
-        const params =
-            new URLSearchParams(
-                window.location.search
-            );
+        const authEmailInput =
+            document.getElementById("auth-email");
 
-        const USER_ID =
-            params.get("userId") || "lucas";
+        const authPasswordInput =
+            document.getElementById("auth-password");
 
-        const ROOM_ID =
-            params.get("roomId") || "room-123";
+        const registerButton =
+            document.getElementById("register-button");
 
+        const loginButton =
+            document.getElementById("login-button");
 
-        console.log(
-            "[Chat] Usuário:",
-            USER_ID
-        );
+        let user = null;
+        let token = null;
+        let eventSource = null;
+        let ROOM_ID = "room-123";
+        let USER_ID = "guest";
 
-        console.log(
-            "[Chat] Sala:",
-            ROOM_ID
-        );
-
-
-        roomInfoElement.textContent =
-            `Usuário: ${USER_ID} | Sala: ${ROOM_ID}`;
-
-
-        // ========================================
-        // SSE
-        // ========================================
-
-        /**
-         * EventSource abre uma conexão persistente
-         * com o endpoint SSE.
-         *
-         * Essa conexão permanece aberta para que
-         * o servidor consiga enviar eventos para
-         * o navegador em tempo real.
-         *
-         * O userId e o roomId são enviados na URL
-         * para que o backend saiba:
-         *
-         * 1. Quem está conectado.
-         * 2. Em qual sala está conectado.
-         */
-
-        const eventSource =
-            new EventSource(
-                `${API_URL}/events` +
-                `?userId=${encodeURIComponent(USER_ID)}` +
-                `&roomId=${encodeURIComponent(ROOM_ID)}`
-            );
-
-
-        // ========================================
-        // CONEXÃO ESTABELECIDA
-        // ========================================
-
-        eventSource.onopen = () => {
-
-            console.log(
-                "[SSE] Conexão estabelecida."
-            );
-
-            statusElement.textContent =
-                "Conectado ao servidor.";
-
-            statusElement.className =
-                "status connected";
-
-        };
-
-
-        // ========================================
-        // EVENTO: CONNECTION
-        // ========================================
-
-        /**
-         * O backend envia esse evento somente
-         * quando a conexão SSE é estabelecida.
-         *
-         * Formato:
-         *
-         * event: connection
-         * data: {...}
-         */
-
-        eventSource.addEventListener(
-            "connection",
-            (event) => {
-
-                console.log(
-                    "[SSE connection] Evento recebido:",
-                    event.data
-                );
-
+        function renderAuth() {
+            if (user) {
+                authCardElement.classList.add("hidden");
+                chatCardElement.classList.remove("hidden");
+                roomInfoElement.textContent =
+                    `Usuário: ${user.name} (${user.email}) | Sala: ${ROOM_ID}`;
+            } else {
+                authCardElement.classList.remove("hidden");
+                chatCardElement.classList.add("hidden");
             }
-        );
+        }
 
+        function clearMessages() {
+            notificationsElement.innerHTML = "";
+        }
 
-        // ========================================
-        // EVENTO: NOTIFICATION
-        // ========================================
+        function appendMessage(data) {
+            const notification = document.createElement("div");
+            const isMine = data.userId === USER_ID;
+            notification.className = isMine ? "notification mine" : "notification other";
 
-        /**
-         * O backend envia mensagens utilizando
-         * o evento SSE "notification".
-         *
-         * Fluxo:
-         *
-         * Frontend
-         *     ↓
-         * POST /notify
-         *     ↓
-         * Redis Publisher
-         *     ↓
-         * Redis
-         *     ↓
-         * Redis Subscriber
-         *     ↓
-         * SSE Connection Manager
-         *     ↓
-         * EventSource
-         *     ↓
-         * Este listener
-         */
+            const header = document.createElement("div");
+            header.className = "notification-header";
 
-        eventSource.addEventListener(
-            "notification",
-            (event) => {
+            const userElement = document.createElement("span");
+            userElement.className = "notification-user";
+            userElement.textContent = data.userId || "Usuário";
 
-                console.log(
-                    "[SSE notification] Evento recebido:",
-                    event.data
+            const roomElement = document.createElement("span");
+            roomElement.className = "notification-room";
+            roomElement.textContent = data.roomId || "";
+
+            header.appendChild(userElement);
+            header.appendChild(roomElement);
+
+            const messageElement = document.createElement("p");
+            messageElement.className = "notification-message";
+            messageElement.textContent = data.message || "";
+
+            const timestamp = document.createElement("small");
+            if (data.timestamp) {
+                timestamp.textContent = new Date(data.timestamp).toLocaleString("pt-BR");
+            }
+
+            notification.appendChild(header);
+            notification.appendChild(messageElement);
+            notification.appendChild(timestamp);
+            notificationsElement.appendChild(notification);
+            notificationsElement.scrollTop = notificationsElement.scrollHeight;
+        }
+
+        async function loadRoomHistory() {
+            if (!token) {
+                return;
+            }
+
+            try {
+                const response = await fetch(
+                    `${API_URL}/rooms/${encodeURIComponent(ROOM_ID)}/messages`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
                 );
 
-                try {
+                const data = await response.json();
 
-                    const data =
-                        JSON.parse(
-                            event.data
-                        );
-
-
-                    // ========================================
-                    // FILTRO DE SALA
-                    // ========================================
-
-                    /**
-                     * O backend deve enviar somente
-                     * mensagens pertencentes à sala
-                     * em que o cliente está conectado.
-                     *
-                     * Essa verificação no frontend
-                     * funciona como uma segunda camada
-                     * de segurança.
-                     */
-
-                    if (
-                        data.roomId &&
-                        data.roomId !== ROOM_ID
-                    ) {
-
-                        console.warn(
-                            "[SSE] Mensagem ignorada. Sala diferente:",
-                            data.roomId
-                        );
-
-                        return;
-                    }
-
-
-                    // ========================================
-                    // CRIA ELEMENTO DA MENSAGEM
-                    // ========================================
-
-                    const notification =
-                        document.createElement(
-                            "div"
-                        );
-
-                    const isMine =
-                        data.userId === USER_ID;
-
-                    notification.className =
-                        isMine
-                            ? "notification mine"
-                            : "notification other";
-
-                    const header =
-                        document.createElement(
-                            "div"
-                        );
-
-                    header.className =
-                        "notification-header";
-
-
-                    const user =
-                        document.createElement(
-                            "span"
-                        );
-
-                    user.className =
-                        "notification-user";
-
-                    user.textContent =
-                        data.userId || "Usuário";
-
-
-                    const room =
-                        document.createElement(
-                            "span"
-                        );
-
-                    room.className =
-                        "notification-room";
-
-                    room.textContent =
-                        data.roomId || "";
-
-
-                    header.appendChild(user);
-
-                    header.appendChild(room);
-
-
-                    const message =
-                        document.createElement(
-                            "p"
-                        );
-
-                    message.className =
-                        "notification-message";
-
-                    message.textContent =
-                        data.message || "";
-
-
-                    const timestamp =
-                        document.createElement(
-                            "small"
-                        );
-
-
-                    if (data.timestamp) {
-
-                        timestamp.textContent =
-                            new Date(
-                                data.timestamp
-                            ).toLocaleString(
-                                "pt-BR"
-                            );
-
-                    }
-
-
-                    notification.appendChild(
-                        header
-                    );
-
-                    notification.appendChild(
-                        message
-                    );
-
-                    notification.appendChild(
-                        timestamp
-                    );
-
-
-                    notificationsElement.appendChild(
-                        notification
-                    );
-
-                    notificationsElement.scrollTop =
-                        notificationsElement.scrollHeight;
-
-                } catch (error) {
-
-                    console.error(
-                        "[SSE] Erro ao processar evento:",
-                        error
-                    );
-
+                if (!response.ok) {
+                    throw new Error(data.error || "Erro ao carregar histórico.");
                 }
 
+                clearMessages();
+
+                for (const message of data.messages) {
+                    appendMessage(message);
+                }
+            } catch (error) {
+                console.error("[History] Erro:", error);
             }
-        );
+        }
 
+        function connectSse() {
+            if (eventSource) {
+                eventSource.close();
+            }
 
-        // ========================================
-        // ERRO / RECONEXÃO
-        // ========================================
-
-        /**
-         * EventSource possui reconexão automática.
-         *
-         * Caso a conexão seja perdida,
-         * o navegador tentará reconectar
-         * automaticamente.
-         */
-
-        eventSource.onerror = (error) => {
-
-            console.error(
-                "[SSE] Erro na conexão:",
-                error
+            eventSource = new EventSource(
+                `${API_URL}/events?userId=${encodeURIComponent(USER_ID)}&roomId=${encodeURIComponent(ROOM_ID)}`
             );
 
-            statusElement.textContent =
-                "Conexão perdida. Tentando reconectar...";
+            eventSource.onopen = () => {
+                statusElement.textContent = "Conectado ao servidor.";
+                statusElement.className = "status connected";
+            };
 
-            statusElement.className =
-                "status disconnected";
+            eventSource.addEventListener("connection", (event) => {
+                console.log("[SSE connection] Evento recebido:", event.data);
+            });
 
-        };
+            eventSource.addEventListener("notification", (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.roomId && data.roomId !== ROOM_ID) {
+                        return;
+                    }
+                    appendMessage(data);
+                } catch (error) {
+                    console.error("[SSE] Erro ao processar evento:", error);
+                }
+            });
 
+            eventSource.onerror = () => {
+                statusElement.textContent = "Conexão perdida. Tentando reconectar...";
+                statusElement.className = "status disconnected";
+            };
+        }
 
-        // ========================================
-        // ENVIAR MENSAGEM
-        // ========================================
+        async function authenticate(action) {
+            const email = authEmailInput.value.trim();
+            const password = authPasswordInput.value.trim();
+            const name = authNameInput.value.trim();
 
-        /**
-         * O SSE é utilizado somente para receber
-         * mensagens.
-         *
-         * Para enviar uma mensagem utilizamos
-         * uma requisição HTTP POST normal.
-         *
-         * Fluxo:
-         *
-         * Formulário
-         *     ↓
-         * POST /notify
-         *     ↓
-         * Express
-         *     ↓
-         * Redis Publisher
-         */
+            if (!email || !password) {
+                alert("Informe e-mail e senha.");
+                return;
+            }
+
+            const endpoint = action === "register" ? "/auth/register" : "/auth/login";
+            const payload = action === "register"
+                ? { name, email, password }
+                : { email, password };
+
+            try {
+                const response = await fetch(`${API_URL}${endpoint}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || "Falha na autenticação.");
+                }
+
+                if (action === "login") {
+                    token = data.token;
+                    user = data.user;
+                    USER_ID = user.userId;
+                } else {
+                    user = data;
+                    USER_ID = user.userId;
+                }
+
+                renderAuth();
+                await loadRoomHistory();
+                connectSse();
+            } catch (error) {
+                console.error("[Auth] Erro:", error);
+                alert(error.message);
+            }
+        }
+
+        registerButton.addEventListener("click", () => authenticate("register"));
+        loginButton.addEventListener("click", () => authenticate("login"));
+
 
         form.addEventListener(
             "submit",
             async (event) => {
-
                 event.preventDefault();
 
+                const message = messageInput.value.trim();
 
-                const message =
-                    messageInput.value.trim();
-
-
-                if (!message) {
+                if (!message || !user) {
+                    alert("Entre na aplicação antes de enviar mensagens.");
                     return;
                 }
 
-
-                sendButton.disabled =
-                    true;
-
+                sendButton.disabled = true;
 
                 try {
+                    const response = await fetch(`${API_URL}/notify`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                        },
+                        body: JSON.stringify({
+                            userId: USER_ID,
+                            roomId: ROOM_ID,
+                            message,
+                        }),
+                    });
 
-                    const response =
-                        await fetch(
-                            `${API_URL}/notify`,
-                            {
-                                method: "POST",
-
-                                headers: {
-                                    "Content-Type":
-                                        "application/json",
-                                },
-
-                                body: JSON.stringify({
-                                    userId: USER_ID,
-                                    roomId: ROOM_ID,
-                                    message,
-                                }),
-                            }
-                        );
-
-
-                    const data =
-                        await response.json();
-
+                    const data = await response.json();
 
                     if (!response.ok) {
-
-                        throw new Error(
-                            data.error ||
-                            "Erro ao enviar mensagem."
-                        );
-
+                        throw new Error(data.error || "Erro ao enviar mensagem.");
                     }
 
-
-                    console.log(
-                        "[API] Mensagem publicada:",
-                        data
-                    );
-
+                    appendMessage({
+                        userId: USER_ID,
+                        roomId: ROOM_ID,
+                        message,
+                        timestamp: new Date().toISOString(),
+                    });
 
                     messageInput.value = "";
-
                     messageInput.focus();
-
                 } catch (error) {
-
-                    console.error(
-                        "[API] Erro:",
-                        error
-                    );
-
-                    alert(
-                        "Não foi possível enviar a mensagem."
-                    );
-
+                    console.error("[API] Erro:", error);
+                    alert("Não foi possível enviar a mensagem.");
                 } finally {
-
-                    sendButton.disabled =
-                        false;
-
+                    sendButton.disabled = false;
                 }
-
             }
         );
 
-
-        // ========================================
-        // ENCERRAMENTO
-        // ========================================
-
-        /**
-         * Fecha explicitamente a conexão SSE
-         * quando o usuário abandona a página.
-         */
-
-        window.addEventListener(
-            "beforeunload",
-            () => {
-
+        window.addEventListener("beforeunload", () => {
+            if (eventSource) {
                 eventSource.close();
-
             }
-        );
+        });
 
     </script>
 

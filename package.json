@@ -11,7 +11,8 @@
         "dev:redis": "docker compose -f docker-compose.dev.yml up redis -d",
         "prod": "docker compose up --build -d",
         "prod:down": "docker compose down",
-        "prod:logs": "docker compose logs -f"
+        "prod:logs": "docker compose logs -f",
+        "test": "node --test backend/tests/auth.test.js backend/tests/message-history.test.js backend/tests/room-validation.test.js"
     },
     "keywords": [
         "nodejs",

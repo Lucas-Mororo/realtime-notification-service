@@ -121,10 +121,36 @@ para acesso externo.
 realtime-notification-service/
 │
 ├── backend/
+│   ├── controllers/
+│   │   ├── notification.controller.js
+│   │   ├── room.controller.js
+│   │   └── room-management.controller.js
+│   │
+│   ├── repositories/
+│   │   ├── message-history.repository.js
+│   │   └── room.repository.js
+│   │
+│   ├── routes/
+│   │   ├── notification.routes.js
+│   │   ├── room.routes.js
+│   │   └── room-management.routes.js
+│   │
+│   ├── services/
+│   │   ├── message-history.service.js
+│   │   ├── notification.service.js
+│   │   ├── room.service.js
+│   │   └── room-management.service.js
 │   │
 │   ├── redis/
 │   │   ├── publisher.js
 │   │   └── subscriber.js
+│   │
+│   ├── sse/
+│   │   └── connection-manager.js
+│   │
+│   ├── data/
+│   │   ├── messages.json
+│   │   └── rooms.json
 │   │
 │   ├── Dockerfile.dev
 │   └── server.js
@@ -142,6 +168,53 @@ realtime-notification-service/
 ├── package-lock.json
 └── README.md
 ```
+
+---
+
+# 🧠 Evolução arquitetural atual
+
+O projeto passou por uma reorganização importante para deixar a arquitetura mais clara e alinhada com boas práticas de estudo.
+
+## Camada de controller
+
+Os controllers recebem as requisições HTTP e fazem validação básica de entrada.
+
+Exemplo:
+
+- `notification.controller.js`
+- `room-management.controller.js`
+- `room.controller.js`
+
+## Camada de service
+
+Os services concentram a regra de negócio.
+
+Exemplo:
+
+- `notification.service.js`
+- `room-management.service.js`
+- `room.service.js`
+
+## Camada de repository
+
+Os repositories são responsáveis por persistir e recuperar dados.
+
+Atualmente, a persistência é feita com arquivos JSON locais para manter o projeto simples e portátil.
+
+Exemplo:
+
+- `message-history.repository.js`
+- `room.repository.js`
+
+## Por que essa mudança foi feita?
+
+A mudança foi feita para separar responsabilidades e facilitar futuras expansões, como:
+
+- adicionar usuários
+- adicionar autenticação
+- adicionar presença online
+- adicionar mensagens lidas
+- trocar o repositório de JSON para banco relacional
 
 ---
 

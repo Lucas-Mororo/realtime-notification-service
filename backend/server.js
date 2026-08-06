@@ -22,12 +22,16 @@ const sseConnectionManager =
 
 const notificationRoutes =
     require("./routes/notification.routes");
-
+const roomRoutes =
+    require("./routes/room.routes");
+const roomManagementRoutes =
+    require("./routes/room-management.routes");
 const sseRoutes =
     require("./routes/sse.routes");
-
 const healthRoutes =
     require("./routes/health.routes");
+const authRoutes =
+    require("./routes/auth.routes");
 
 // ========================================
 // CONFIGURAÇÕES
@@ -99,7 +103,12 @@ app.use(
     })
 );
 
+app.locals.sessions = {};
+
+app.use(authRoutes);
 app.use(notificationRoutes);
+app.use(roomManagementRoutes);
+app.use(roomRoutes);
 app.use(sseRoutes);
 app.use(healthRoutes);
 

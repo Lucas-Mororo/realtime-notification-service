@@ -1,9 +1,11 @@
 const express = require("express");
 
-const router = express.Router();
+const { authenticate } = require("../middleware/auth.middleware");
+const {
+    publishNotification,
+} = require("../controllers/notification.controller");
 
-const notificationService =
-    require("../services/notification.service");
+const router = express.Router();
 
 /**
  * Publica uma mensagem no Redis.
@@ -12,7 +14,9 @@ const notificationService =
  *
  * HTTP
  *   ↓
- * Route
+ * Controller
+ *   ↓
+ * Service
  *   ↓
  * Redis Publisher
  *   ↓
@@ -20,69 +24,8 @@ const notificationService =
  */
 router.post(
     "/notify",
-    async (req, res) => {
-
-        try {
-
-            const {
-                userId,
-                roomId,
-                message,
-            } = req.body;
-
-            // ========================================
-            // VALIDAÇÃO
-            // ========================================
-
-            if (!userId) {
-                return res.status(400).json({
-                    error: "userId é obrigatório.",
-                });
-            }
-
-            if (!roomId) {
-                return res.status(400).json({
-                    error: "roomId é obrigatório.",
-                });
-            }
-
-            if (
-                typeof message !== "string" ||
-                !message.trim()
-            ) {
-                return res.status(400).json({
-                    error: "A mensagem é obrigatória.",
-                });
-            }
-
-            // ========================================
-            // PAYLOAD
-            // ========================================
-
-            await notificationService.publish({
-                type: "message",
-                userId,
-                roomId,
-                message,
-            });
-
-            return res.json({
-                success: true,
-                message: "Mensagem publicada.",
-            });
-
-        } catch (error) {
-
-            console.error(
-                "[POST /notify] Erro:",
-                error
-            );
-
-            return res.status(500).json({
-                error: "Erro interno do servidor.",
-            });
-        }
-    }
+    authenticate,
+    publishNotification
 );
 
 module.exports = router;

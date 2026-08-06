@@ -2,6 +2,9 @@ const {
     getPublisher,
 } = require("../redis/publisher");
 
+const messageHistoryService =
+    require("./message-history.service");
+
 const CHANNEL =
     process.env.REDIS_CHANNEL || "notifications";
 
@@ -36,6 +39,12 @@ class NotificationService {
             message: message.trim(),
             timestamp: new Date().toISOString(),
         };
+
+        /**
+         * Armazena a mensagem no histórico
+         * antes de publicá-la no Redis.
+         */
+        messageHistoryService.save(notification);
 
         const publisher =
             await getPublisher();
